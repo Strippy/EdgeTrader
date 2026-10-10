@@ -56,7 +56,7 @@ export const CFG = {
    *  Hyperliquid-only (HL per-coin trade cadence is much lower). Set via env, not per-mode, so
    *  that mixing modes doesn't silently change risk behaviour. */
   staleSpotMs: num('STALE_SPOT_MS', (process.env.SIGNAL_SOURCE === 'hl' ? 5000 : 1500)),
-  staleBookMs: num('STALE_BOOK_MS', 10_000),
+  staleBookMs: num('STALE_BOOK_MS', 2_000), // fast l2Book = 5 levels @ 0.5s; 4 missed updates = stale
 
   // --- model (shared with stats.ts) ---
   volHalfLifeFast: num('VOL_HL_FAST', 60),

@@ -36,8 +36,12 @@ export class HyperliquidFeed {
       heartbeat: { everyMs: 20_000, payload: JSON.stringify({ method: 'ping' }) },
       silenceMs: 45_000,
       onOpen: () => {
+        // fast: true → 5 levels @ 0.5s cadence (default feed is 20 levels @ 2s, moving to 5s).
+        // For maker-first quoting, top-of-book speed matters more than depth.
+        // Tune via HL_BOOK_FAST=0 for deeper but slower books.
+        const fast = process.env.HL_BOOK_FAST !== '0';
         for (const coin of this.coins) {
-          this.ws.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'l2Book', coin } }));
+          this.ws.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'l2Book', coin, ...(fast ? { fast: true } : {}) } }));
           this.ws.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'trades', coin } }));
         }
       },

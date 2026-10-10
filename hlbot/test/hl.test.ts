@@ -158,11 +158,9 @@ test('hl-only: assertConfig rejects live mode when SIGNAL_SOURCE=hl', async () =
   assert.ok(threw, 'assertConfig must throw when SIGNAL_SOURCE=hl and MODE=live');
 });
 
-// --- ShadowExecutor: maker fills only on real trade-through (book touch must not fill) ---
+// --- ShadowExecutor: maker fills only on strictly-through real trades (no book touch, no exact-price) ---
 
 import { ShadowExecutor } from '../src/exec/executor.js';
-import type { HlBook } from '../src/feeds/hyperliquid.js';
-
 function book(coin: string, bid: number, ask: number, recvAt = Date.now()): HlBook {
   return {
     coin, time: recvAt, recvAt,
@@ -171,74 +169,191 @@ function book(coin: string, bid: number, ask: number, recvAt = Date.now()): HlBo
   };
 }
 
-test('shadow executor: book touch alone does not fill a maker order', async () => {
+test('shadow executor: book touch alone does not fill a maker buy', async () => {
   const books = new Map<string, HlBook>();
   const ex = new ShadowExecutor(books);
   const fills: any[] = [];
   ex.onMakerFill = f => fills.push(f);
   books.set('XRP', book('XRP', 1.40, 1.41));
-  // rest a maker buy at 1.4050 — the book bid is above it (touching), no trade yet
   const oid = await ex.make('XRP', 'buy', 100, 1.405, 2.0);
-  assert.ok(oid, 'make should succeed');
-  // ALO reject check: 1.405 < ask 1.41, so it's valid
-  assert.equal(fills.length, 0, 'placing should not fill');
-  // Simulate a book update where best ask crosses 1.405 (i.e. book touch through)
+  assert.ok(oid);
+  assert.equal(fills.length, 0, 'placing must not fill');
+  // book touch: best ask crosses our 1.405 buy
   ex.onBook(book('XRP', 1.40, 1.4050));
-  assert.equal(fills.length, 0, 'book touch must NOT fill (per user spec)');
-  // A sell-aggressor printing at 1.41 (ABOVE our 1.405 buy) does NOT cross our level
-  ex.onTrade({ coin: 'XRP', side: 'A', px: 1.41, sz: 50, time: Date.now() });
-  assert.equal(fills.length, 0, 'sell aggressor above our 1.405 buy must NOT fill it');
-  // Correct fill case: sell-aggressor prints AT our price 1.405 (crosses into our level)
+  assert.equal(fills.length, 0, 'book touch must NOT fill');
+  // exact-level print must NOT fill (no queue inference)
   ex.onTrade({ coin: 'XRP', side: 'A', px: 1.405, sz: 50, time: Date.now() });
-  assert.equal(fills.length, 1, 'sell aggressor printing at 1.405 should fill our 1.405 buy');
-});
-
-test('shadow executor: sell-aggressor trade strictly below a buy price fills it', async () => {
-  const books = new Map<string, HlBook>();
-  const ex = new ShadowExecutor(books);
-  const fills: any[] = [];
-  ex.onMakerFill = f => fills.push(f);
-  books.set('XRP', book('XRP', 1.40, 1.42));
-  const oid = await ex.make('XRP', 'buy', 100, 1.41, 2.0);
-  assert.ok(oid);
-  // sell aggressor prints through 1.41
+  assert.equal(fills.length, 0, 'exact-level print must NOT fill (no queue inference)');
+  // sell aggressor printing strictly BELOW our buy fills it
   ex.onTrade({ coin: 'XRP', side: 'A', px: 1.409, sz: 50, time: Date.now() });
-  assert.equal(fills.length, 1, 'sell aggressor printing below our 1.41 buy must fill it');
+  assert.equal(fills.length, 0, 'sell aggressor above our 1.405 buy must NOT fill');
+  ex.onTrade({ coin: 'XRP', side: 'A', px: 1.404, sz: 50, time: Date.now() });
+  assert.equal(fills.length, 1, 'sell aggressor printing strictly through 1.405 must fill our buy');
 });
 
-test('shadow executor: same-side trade at exact level fills (queue ahead of us consumed)', async () => {
+test('shadow executor: book touch alone does not fill a maker sell (symmetric)', async () => {
   const books = new Map<string, HlBook>();
   const ex = new ShadowExecutor(books);
   const fills: any[] = [];
   ex.onMakerFill = f => fills.push(f);
-  books.set('XRP', book('XRP', 1.41, 1.43));
-  const oid = await ex.make('XRP', 'buy', 100, 1.415, 2.0);
+  books.set('XRP', book('XRP', 1.40, 1.41));
+  const oid = await ex.make('XRP', 'sell', 100, 1.405, 2.0);
   assert.ok(oid);
-  // buy aggressor prints exactly at our level (queue ahead consumed)
-  ex.onTrade({ coin: 'XRP', side: 'B', px: 1.415, sz: 50, time: Date.now() });
-  assert.equal(fills.length, 1, 'buy aggressor printing at our exact level should fill us');
+  assert.equal(fills.length, 0, 'placing must not fill');
+  ex.onBook(book('XRP', 1.4050, 1.41));
+  assert.equal(fills.length, 0, 'book touch must NOT fill');
+  // buy aggressor printing strictly ABOVE our sell fills it
+  ex.onTrade({ coin: 'XRP', side: 'B', px: 1.406, sz: 50, time: Date.now() });
+  assert.equal(fills.length, 1, 'buy aggressor printing strictly through 1.405 must fill our sell');
 });
 
-// --- Stale signal must not block book-based risk exits (stop, max-hold, working-order TTL) ---
-// These tests exercise the evaluate() safety restructuring via ShadowExecutor + fake Engine.
-// Since Engine has private methods and depends on live feeds, we assert on the executor +
-// a small wrapper that mirrors the exact risk logic used in evaluate().
-
-test('risk exits: a position at 25bp loss exits even if reference signal is stale', () => {
-  // Simulates: HL book fresh, ref()=null (signal stale). pnlBps must trigger exit.
-  const pos = { sz: 1, avgPx: 100, openedAt: Date.now() - 1000 };
-  const bid = 99.75, ask = 99.751; // 25bp loss below avgPx
-  const pnlBps = ((bid - pos.avgPx) / pos.avgPx) * 1e4;
-  assert.ok(pnlBps <= -25, `pnlBps must be <= -25 (stop), got ${pnlBps}`);
-  // The evaluate() code path does NOT check ref() before computing pnlBps, so it would fire exit('stop').
-  const signalStale = true;
-  assert.ok(signalStale, 'fixture marks signal as stale');
-  // If the stop branch were gated behind !staleSignal, this test would fail.
+test('shadow executor: same-direction trade prints do not fill (aggressor filter)', async () => {
+  const books = new Map<string, HlBook>();
+  const ex = new ShadowExecutor(books);
+  const fills: any[] = [];
+  ex.onMakerFill = f => fills.push(f);
+  books.set('XRP', book('XRP', 1.40, 1.41));
+  const oid = await ex.make('XRP', 'buy', 100, 1.405, 2.0);
+  assert.ok(oid);
+  // buy-aggressor trades (taker buying) must never fill a resting buy (queue is not ahead of us)
+  ex.onTrade({ coin: 'XRP', side: 'B', px: 1.404, sz: 50, time: Date.now() });
+  assert.equal(fills.length, 0, 'buy aggressor must not fill our buy');
+  // sell aggressor but not through our level
+  ex.onTrade({ coin: 'XRP', side: 'A', px: 1.406, sz: 50, time: Date.now() });
+  assert.equal(fills.length, 0, 'sell aggressor above our level must not fill');
 });
 
-test('risk exits: max-hold fires regardless of signal freshness', () => {
-  const pos = { sz: 1, avgPx: 100, openedAt: Date.now() - 91_000 }; // > 90s maxHold
+
+// --- Engine risk-exit tests: real Engine instance, stub executor, controlled state ---
+
+import { Engine } from '../src/engine.js';
+import type { Executor, Fill } from '../src/exec/executor.js';
+import type { HlBook, HlTrade, AssetMeta } from '../src/feeds/hyperliquid.js';
+import type { Side } from '../src/strategy/decide.js';
+
+type Recorded = { kind: string; [k: string]: unknown };
+
+async function makeEngine(books: Map<string, HlBook>) {
+  const actions: Recorded[] = [];
+  const exec: Executor = {
+    mode: 'shadow',
+    onMakerFill: (_f: Fill) => {},
+    ready: async () => {},
+    take: async (coin: string, side: Side, sz: number, limitPx: number, _ro: boolean, reason: string, edgeBps: number) => {
+      actions.push({ kind: 'exit-or-take', coin, side, sz, limitPx, reason, edgeBps });
+      return null;
+    },
+    make: async (coin: string, side: Side, sz: number, px: number, edgeBps: number) => {
+      actions.push({ kind: 'make', coin, side, sz, px, edgeBps });
+      return 'test-oid';
+    },
+    cancel: async (coin: string, oid: number | string) => { actions.push({ kind: 'cancel', coin, oid }); },
+    // record reason via bus for cancel assertions
+
+    onTrade: (_t: HlTrade) => {},
+    onBook: (_b: HlBook) => {},
+  };
+  const hl = {
+    books,
+    onTrade: undefined,
+    onBook: undefined,
+    start: () => {},
+  } as unknown as ConstructorParameters<typeof Engine>[1];
+  const wire: string[] = [];
+  const bus = await import('../src/bus.js');
+  const origWire = bus.bus.wireEvent.bind(bus.bus);
+  bus.bus.wireEvent = (srcName: string, kind: string, msg: string) => { wire.push(`${kind}|${msg}`); };
+  const meta = new Map<string, AssetMeta>([['BTC', { coin: 'BTC', index: 0, szDecimals: 5, maxLeverage: 40 }]]);
+  const eng = new Engine(exec, hl, meta);
+  const s = eng.coins.get('BTC')!;
+  // evaluate is private — access via bracket notation for test purposes only
+  const evalCoin = () => Promise.resolve((eng as unknown as { evaluate(x: unknown): void }).evaluate(s));
+  return { eng, actions, s, evalCoin, wire };
+}
+
+test('engine: stale book + expired working order still cancels via TTL', async () => {
+  const books = new Map<string, HlBook>(); // no books at all
+  const { actions, s, evalCoin, wire } = await makeEngine(books);
+  s.working = { side: 'buy', px: 100, sz: 1, placedAt: Date.now() - 60_000, oid: 'abc' };
+  await evalCoin();
+  assert.equal(actions.length, 1, 'must emit exactly one action');
+  assert.equal(actions[0].kind, 'cancel');
+  assert.ok(wire.some(w => /ttl/.test(w)), `wire must log ttl cancel: ${JSON.stringify(wire)}`);
+  assert.equal(s.working, null, 'working order must be cleared');
+});
+
+test('engine: fresh book + stale signal still fires stop exit', async () => {
   const now = Date.now();
-  const maxHoldSec = 90;
-  assert.ok((now - pos.openedAt) / 1000 > maxHoldSec, 'fixture must exceed maxHold');
+  const books = new Map<string, HlBook>([['BTC', {
+    coin: 'BTC', recvAt: now, time: now,
+    bids: [{ price: 99.7, size: 10 }],
+    asks: [{ price: 99.71, size: 10 }],
+  }]]);
+  const { actions, s, evalCoin } = await makeEngine(books);
+  // open a long at 100, now down 30bp (past the 25bp stop)
+  s.pos = { sz: 1, avgPx: 100, openedAt: now - 1000 };
+  await evalCoin();
+  assert.equal(actions.length, 1, 'must fire stop exit despite stale signal');
+  assert.equal(actions[0].kind, 'exit-or-take');
+  assert.equal(actions[0].reason, 'stop');
+  assert.equal(actions[0].side, 'sell');
+});
+
+test('engine: fresh book + stale signal still fires max-hold exit', async () => {
+  const now = Date.now();
+  const books = new Map<string, HlBook>([['BTC', {
+    coin: 'BTC', recvAt: now, time: now,
+    bids: [{ price: 100, size: 10 }],
+    asks: [{ price: 100.01, size: 10 }],
+  }]]);
+  const { actions, s, evalCoin } = await makeEngine(books);
+  // long opened 100s ago, above maxHoldSec (90)
+  s.pos = { sz: 1, avgPx: 100, openedAt: now - 100_000 };
+  await evalCoin();
+  assert.equal(actions.length, 1, 'must fire time exit despite stale signal');
+  assert.equal(actions[0].kind, 'exit-or-take');
+  assert.equal(actions[0].reason, 'time');
+});
+
+test('engine: killed state with stale book still cancels a working order', async () => {
+  const books = new Map<string, HlBook>(); // no books at all
+  const { eng, actions, s, evalCoin } = await makeEngine(books);
+  eng.killed = 'daily loss limit';
+  s.working = { side: 'buy', px: 100, sz: 1, placedAt: Date.now(), oid: 'abc' };
+  await evalCoin();
+  assert.equal(actions.length, 1);
+  assert.equal(actions[0].kind, 'cancel');
+  assert.equal(s.working, null, 'kill must clear working order');
+});
+
+test('engine: repeated evaluation while action is in flight does not double-fire', async () => {
+  const books = new Map<string, HlBook>();
+  const { actions, s, evalCoin, wire } = await makeEngine(books);
+  s.working = { side: 'buy', px: 100, sz: 1, placedAt: Date.now() - 60_000, oid: 'abc' };
+  await evalCoin();
+  // simulate act() completed (busy=false, working=null): second eval is a no-op
+  await evalCoin();
+  assert.equal(actions.length, 1, 'second evaluation must not emit another action');
+});
+
+test('engine: position + working order coexists -> cancel working order first', async () => {
+  const now = Date.now();
+  const books = new Map<string, HlBook>([['BTC', {
+    coin: 'BTC', recvAt: now, time: now,
+    bids: [{ price: 99.7, size: 10 }],
+    asks: [{ price: 99.71, size: 10 }],
+  }]]);
+  const { actions, s, evalCoin } = await makeEngine(books);
+  // long position down 30bp AND a working order present — cancel must come first
+  s.pos = { sz: 1, avgPx: 100, openedAt: now - 1000 };
+  s.working = { side: 'buy', px: 99.7, sz: 1, placedAt: Date.now(), oid: 'abc' };
+  await evalCoin();
+  assert.equal(actions.length, 1, 'one action at a time (single-flight)');
+  assert.equal(actions[0].kind, 'cancel', 'cancel working order before position exit');
+  assert.equal(s.working, null);
+  // second eval now fires the stop exit
+  await evalCoin();
+  assert.equal(actions.length, 2);
+  assert.equal(actions[1].kind, 'exit-or-take');
+  assert.equal(actions[1].reason, 'stop');
 });

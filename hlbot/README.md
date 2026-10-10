@@ -19,7 +19,7 @@ npm start            # dashboard → http://127.0.0.1:8788
 npm test
 ```
 
-**shadow** (default): live Binance and Hyperliquid data, no orders. IOC fills walk the live L2 book after `SHADOW_LATENCY_MS`. Maker fills count only when a real print trades *through* the quote, or the book crosses it. It doesn't model queue position, so this errs conservative on maker fills. It still can't see adverse selection beyond that. Logs go to `data/shadow-*.jsonl`.
+**shadow** (default): live Binance and Hyperliquid data, no orders. IOC fills walk the live L2 book after `SHADOW_LATENCY_MS`. Maker fills count only when a real trade prints *strictly through* the quoted price with the opposite aggressor direction — book-touch and exact-price prints do not count. This errs conservative on maker fills. It still can't see adverse selection beyond that. Logs go to `data/shadow-*.jsonl`.
 
 **live**: `LIVE_CONFIRM=I_UNDERSTAND_REAL_MONEY`, plus an API/agent wallet key (can trade, can't withdraw) and your account address. Sets cross leverage per coin, books maker fills from the `userFills` stream and IOC fills from order responses. Start with no open positions on those coins; the bot assumes it starts flat.
 
@@ -90,10 +90,11 @@ or VPS (nvm, docker node:22, etc.) before live use.
   coins.** Position state is in-memory only. If the process dies mid-position, on restart
   `pos = { sz: 0 }` — the engine will happily open a *new* position while the old one is
   still held. Either close positions before restarting, or manually reconcile state.
-- **Shadow maker fills use a permissive "book touch" model.** A resting maker order fills
-  if any side of the book crosses it — no queue-position simulation. Real fills are usually
-  worse (queue priority, partial fills at touch only). Read shadow `makerShare` and
-  `netBpsPerTrip` as an *upper bound*, not a point estimate.
+- **Shadow maker fills are conservative.** A resting maker order fills only when a real
+  trade prints *strictly through* its price with the opposite aggressor direction. No
+  book-touch inference, no exact-price (queue position) inference. Real fills may still be
+  worse (partial fills, cancellations mid-flight), but the simulated maker fill count is a
+  lower bound on the opportunity, not an inflated upper bound.
 - **Short shadow runs mix samples across restarts by default.** Fills/trips persist in
   `data/{mode}-{fills,trips}.jsonl` and are loaded on boot. Use `DATA_FRESH=1` (shadow only)
   to skip loading prior runs into memory — this does NOT touch disk, and is ignored in live
@@ -106,5 +107,14 @@ or VPS (nvm, docker node:22, etc.) before live use.
   run the original cross-venue strategy. `SIGNAL_SOURCE=hl` exists for this case.
 - **`STALE_SPOT_MS` defaults differently per mode.** 1500 for the original Binance feed
   (fast cadence), 5000 for `SIGNAL_SOURCE=hl` (Hyperliquid per-coin trade cadence is much
-  lower). This is a per-mode risk behaviour — verify with `env | grep STALE` or check the
-  `/api/state` `signalSource` field matches what you expect.
+  lower). Verify the `/api/state` `signalSource` field matches what you expect.
+- **Hyperliquid `l2Book` public feed cadence changed (June 2026).** The standard 20-level
+  subscription now pushes every 2 seconds (a later upgrade is expected to move it to 5
+  seconds). With `fast: true` the feed returns 5 levels every 0.5 seconds. HLBot defaults to
+  `fast: true` (top-of-book speed matters for maker quoting); set `HL_BOOK_FAST=0` for the
+  deeper but slower 20-level feed, and raise `STALE_BOOK_MS` accordingly. See
+  [QuickNode: Hyperliquid Foundation WebSocket changes](https://www.quicknode.com/blog/hyperliquid-foundation-websocket-changes).
+- **Risk exits are not gated by data freshness.** Stop, max-hold, kill-state cancels and
+  working-order TTL cancels fire even when the reference signal or book is stale, so a
+  data outage cannot trap a position or leave a resting order live. Signal-dependent
+  decisions (requote, entries) still require fresh data.

@@ -87,7 +87,7 @@ footer{color:var(--faint);font-size:10px;margin-top:8px;text-align:center}
 <body>
 <header>
   <div class="logo">HL</div>
-  <div class="title"><small>◆ LEAD-LAG · BINANCE → HYPERLIQUID · MAKER-FIRST</small><b>HLBOT <span>// PERP LATENCY ENGINE</span></b>
+  <div class="title"><small id="titleTag">◆ LEAD-LAG · BINANCE → HYPERLIQUID · MAKER-FIRST</small><b>HLBOT <span>// PERP LATENCY ENGINE</span></b>
     <small id="sub">connecting…</small></div>
   <span class="badge shadow" id="mode">—</span>
   <div class="hstats" id="hstats"></div>
@@ -142,9 +142,9 @@ footer{color:var(--faint);font-size:10px;margin-top:8px;text-align:center}
 
 <div class="grid r4">
   <div class="p"><h3>COINS <em>tap a row to focus</em></h3>
-    <div class="scroll"><table><thead><tr><th>COIN</th><th>HL MID</th><th>BINANCE</th><th>BASIS</th><th>FAIR</th><th>TAKE L</th><th>TAKE S</th><th>MAKE L</th><th>MAKE S</th><th>LEAD</th><th>POS</th><th>uPNL</th><th>STATE</th></tr></thead><tbody id="coins"></tbody></table></div>
+    <div class="scroll"><table><thead><tr><th>COIN</th><th>HL MID</th><th>REF</th><th>BASIS</th><th>FAIR</th><th>TAKE L</th><th>TAKE S</th><th>MAKE L</th><th>MAKE S</th><th>LEAD</th><th>POS</th><th>uPNL</th><th>STATE</th></tr></thead><tbody id="coins"></tbody></table></div>
   </div>
-  <div class="p"><h3>WIRE INSPECTOR · HYPERLIQUID + BINANCE <em id="wiresub"></em></h3><div class="wire mono" id="wire"></div></div>
+  <div class="p"><h3>WIRE INSPECTOR · <span id="wireSrc">HYPERLIQUID + BINANCE</span> <em id="wiresub"></em></h3><div class="wire mono" id="wire"></div></div>
 </div>
 <footer>Live Binance aggTrades + Hyperliquid L2/trades. SHADOW = real books, hypothetical fills (maker fills only on trade-through). Not financial advice.</footer>
 
@@ -199,9 +199,13 @@ function render() {
   $('clock').textContent = hms(S.now) + ' UTC';
   const hlOnly = S.coins.some(x => x.signalSource === 'hl');
   document.body.classList.toggle('hl-only', hlOnly);
+  const tt = document.getElementById('titleTag');
+  if (tt) tt.textContent = hlOnly ? '◆ HL-ONLY EXPERIMENTAL · LIVE DISABLED' : '◆ LEAD-LAG · BINANCE → HYPERLIQUID · MAKER-FIRST';
+  const ws2 = document.getElementById('wireSrc');
+  if (ws2) ws2.textContent = hlOnly ? 'HYPERLIQUID ONLY' : 'HYPERLIQUID + BINANCE';
   $('sub').innerHTML = `HYPERLIQUID ${S.feeds.hl ? '<span class="g">OK</span>' : '<span class="r">DOWN</span>'} · ${hlOnly ? '<span class="a">SIGNAL=HL-ONLY (EXPERIMENTAL, LIVE DISABLED)</span>' : `BINANCE ${S.coins.some(x => x.binance) ? '<span class="g">OK</span>' : '<span class="r">—</span>'}`}`;
-  $('hstats').innerHTML = S.coins.map(x => `<div class="hs"><small>${x.coin} · lead ${x.llSamples > 100 ? x.leadMs + 'ms' : '…'}</small><b class="mono">${px(x.mid)}</b></div>`).join('');
-  const items = [...S.tape.slice(0, 10).map(f => `<i class="${f.side === 'buy' ? 'g' : 'r'}">${f.liquidity.toUpperCase()} ${f.coin} ${f.side.toUpperCase()} ${f.sz} @ ${px(f.px)} · ${f.reason}</i>`), ...S.coins.map(x => `<i>${x.coin} FAIR ${fmt(x.fairBps, 1)}bp · BASIS ${fmt(x.basisBps, 1)}bp · LEAD ${x.leadMs}ms</i>`)];
+  $('hstats').innerHTML = S.coins.map(x => `<div class="hs"><small>${x.coin} · ${x.leadMs === null ? 'hl-only' : (x.llSamples > 100 ? `lead ${x.leadMs}ms` : 'lead …')}</small><b class="mono">${px(x.mid)}</b></div>`).join('');
+  const items = [...S.tape.slice(0, 10).map(f => `<i class="${f.side === 'buy' ? 'g' : 'r'}">${f.liquidity.toUpperCase()} ${f.coin} ${f.side.toUpperCase()} ${f.sz} @ ${px(f.px)} · ${f.reason}</i>`), ...S.coins.map(x => `<i>${x.coin} FAIR ${fmt(x.fairBps, 1)}bp · BASIS ${fmt(x.basisBps, 1)}bp · ${x.leadMs === null ? 'no lead (hl-only)' : `LEAD ${x.leadMs}ms`}</i>`)];
   const roll = items.join(''); if ($('roll').dataset.h !== roll) { $('roll').innerHTML = roll; $('roll').dataset.h = roll; }
 
   $('pnl').innerHTML = `<span class="${st.net >= 0 ? 'g' : 'r'}">${st.net >= 0 ? '+' : ''}${money(st.net)}</span>`;
@@ -215,7 +219,7 @@ function render() {
     const H = c.hist;
     lines($('fair'), [{ pts: H.map(h => [h.t, h.bid]), c: C.g, dash: [2, 3], w: 1 }, { pts: H.map(h => [h.t, h.ask]), c: C.r, dash: [2, 3], w: 1 }, { pts: H.map(h => [h.t, h.mid]), c: C.t }, { pts: H.map(h => [h.t, h.binEq]), c: C.a }, { pts: H.map(h => [h.t, h.fair]), c: C.c, w: 2 }]);
     const e = c.edges ?? {};
-    $('fairside').innerHTML = [['HL MID', px(c.mid), ''], ['FAIR', px(c.fair), bps(c.fairBps)], ['BINANCE', px(c.binance), c.venue ?? ''], ['BASIS (slow)', fmt(c.basisBps, 2) + 'bp', ''], ['TAKE L / S', bps(e.longTake), bps(e.shortTake)], ['MAKE L / S', bps(e.longMake), bps(e.shortMake)]]
+    $('fairside').innerHTML = [['HL MID', px(c.mid), ''], ['FAIR', px(c.fair), bps(c.fairBps)], [(c.venue === 'hl' ? 'HL REF' : 'BINANCE'), px(c.binance), c.venue ?? ''], ['BASIS (slow)', fmt(c.basisBps, 2) + 'bp', ''], ['TAKE L / S', bps(e.longTake), bps(e.shortTake)], ['MAKE L / S', bps(e.longMake), bps(e.shortMake)]]
       .map(([k, v, s]) => `<div class="t"><small>${k}</small><b class="mono">${v}</b> <span class="d" style="font-size:10px">${s}</span></div>`).join('');
     const mx = Math.max(1, ...c.books.asks.map(l => l.size), ...c.books.bids.map(l => l.size));
     $('bookage').textContent = c.bookAgeMs !== null ? `${c.coin} · ${c.bookAgeMs}ms old` : '';
@@ -240,7 +244,7 @@ function render() {
   $('trips').innerHTML = S.trips.slice(0, 50).map(t => `<tr><td>${hms(t.closedAt)}</td><td>${t.coin}</td><td class="${t.dir === 'long' ? 'g' : 'r'}">${t.dir}${t.makerEntry ? ' ·M' : ''}</td><td>${px(t.entryPx)}</td><td>${px(t.exitPx)}</td><td>${((t.closedAt - t.openedAt) / 1000).toFixed(0)}s</td><td>${t.exitReason}</td><td>${t.fees.toFixed(2)}</td><td>${sgn(t.net)}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">none yet</td></tr>';
   $('tiles').innerHTML = [['LAST FILL', S.tape[0] ? `${S.tape[0].coin} ${money(S.tape[0].sz * S.tape[0].px, 0)}` : '—'], ['NET / TRIP', st.avgNet === null ? '—' : money(st.avgNet)], ['FEES PAID', money(st.fees)], ['FILLS / HR', fmt(st.fillsPerHr, 1)]].concat(st.byExit.map(b => [`EXIT · ${b.r.toUpperCase()}`, `${b.n} · ${money(b.net)}`]))
     .map(([k, v]) => `<div><small>${k}</small><b class="mono">${v}</b></div>`).join('');
-  $('coins').innerHTML = S.coins.map(x => { const e = x.edges ?? {}; return `<tr data-s="${x.coin}" class="${x.coin === c?.coin ? 'sel' : ''}"><td>${x.coin}</td><td>${px(x.mid)}</td><td>${px(x.binance)}</td><td>${fmt(x.basisBps, 1)}bp</td><td>${bps(x.fairBps)}</td><td>${bps(e.longTake)}</td><td>${bps(e.shortTake)}</td><td>${bps(e.longMake)}</td><td>${bps(e.shortMake)}</td><td>${x.llSamples > 100 ? x.leadMs + 'ms' : '…'}</td><td>${x.pos.sz || '—'}</td><td>${sgn(x.unreal)}</td><td class="d">${esc(x.block || 'armed')}</td></tr>`; }).join('');
+  $('coins').innerHTML = S.coins.map(x => { const e = x.edges ?? {}; return `<tr data-s="${x.coin}" class="${x.coin === c?.coin ? 'sel' : ''}"><td>${x.coin}</td><td>${px(x.mid)}</td><td>${px(x.binance)}</td><td>${fmt(x.basisBps, 1)}bp</td><td>${bps(x.fairBps)}</td><td>${bps(e.longTake)}</td><td>${bps(e.shortTake)}</td><td>${bps(e.longMake)}</td><td>${bps(e.shortMake)}</td><td>${x.leadMs === null ? 'n/a' : (x.llSamples > 100 ? x.leadMs + 'ms' : '…')}</td><td>${x.pos.sz || '—'}</td><td>${sgn(x.unreal)}</td><td class="d">${esc(x.block || 'armed')}</td></tr>`; }).join('');
   $('wiresub').textContent = Object.entries(S.feeds.counts).map(([k, v]) => `${k} ${v}`).join(' · ') + ` · ${(S.feeds.bytes / 1024).toFixed(0)} KB`;
   $('wire').innerHTML = S.wire.map(e => `<div><span class="d">${hms(e.t)}</span> <span class="${e.kind === 'error' || e.kind === 'loss' ? 'r' : e.kind === 'warn' ? 'a' : 'c'}">${esc(e.src)}:${esc(e.kind)}</span> ${esc(e.msg)}</div>`).join('');
 }
@@ -258,6 +262,10 @@ connect(); requestAnimationFrame(drawShell);
       if (!S || !S.coins?.length) return;
       const hlOnly = S.coins.some(c => c.signalSource === 'hl');
       document.body.classList.toggle('hl-only', hlOnly);
+  const tt = document.getElementById('titleTag');
+  if (tt) tt.textContent = hlOnly ? '◆ HL-ONLY EXPERIMENTAL · LIVE DISABLED' : '◆ LEAD-LAG · BINANCE → HYPERLIQUID · MAKER-FIRST';
+  const ws2 = document.getElementById('wireSrc');
+  if (ws2) ws2.textContent = hlOnly ? 'HYPERLIQUID ONLY' : 'HYPERLIQUID + BINANCE';
     } catch (e) { /* noop */ }
   }, 1000);
 </script>

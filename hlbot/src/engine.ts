@@ -96,11 +96,15 @@ export class Engine {
     const staleSignal = !r || now - r.ts > CFG.staleSpotMs;
     if (staleBook) s.block = 'HL book stale';
 
-    // ---- Risk / cancellation handling runs on EVERY tick, not gated by signal freshness ----
-    // A stale signal (missing Binance ref) must never leave a real working order on the exchange.
+    // ---- Risk / cancellation handling runs on EVERY tick, not gated by signal or book freshness ----
+    // A stale signal or stale book must never leave a real working order on the exchange.
     if (s.busy) { s.block = 'order in flight'; return; }
+    // Working-order TTL cancels depend on nothing but our own clock — fire even if the book is stale.
+    if (s.working && now - s.working.placedAt > CFG.makerTtlMs) {
+      this.act(s, { kind: 'cancel', reason: 'ttl' });
+      return;
+    }
     if (this.killed) {
-      if (staleBook && !s.working && s.pos.sz === 0) { s.block = `killed: ${this.killed}`; return; }
       // cancel first if quoting; otherwise flatten using live HL prices
       if (s.working) { this.act(s, { kind: 'cancel', reason: 'kill' }); return; }
       if (s.pos.sz !== 0 && !staleBook && b) {
@@ -119,15 +123,13 @@ export class Engine {
     const bid = b.bids[0]?.price, ask = b.asks[0]?.price;
     if (!(bid > 0 && ask > bid)) { s.block = 'no book'; return; }
 
-    // Book-based risk exits (stop, max-hold, working-order TTL) depend only on HL prices —
+    // Book-based risk exits (stop, max-hold) depend only on HL prices —
     // run them even when the reference signal is stale, so a signal outage can't trap a position.
-    if (s.pos.sz === 0 && s.working) {
-      const w = s.working;
-      if (now - w.placedAt > CFG.makerTtlMs) { if (!s.busy) this.act(s, { kind: 'cancel', reason: 'ttl' }); return; }
-      if (!staleSignal) {
-        const best = w.side === 'buy' ? bid : ask;
-        if (Math.abs(w.px - best) > 1e-12) { if (!s.busy) this.act(s, { kind: 'cancel', reason: 'requote' }); return; }
-      }
+    // Priority (matches decide()): cancel any working order first, then manage the position.
+    if (s.working && s.pos.sz !== 0) { this.act(s, { kind: 'cancel', reason: 'position open' }); return; }
+    if (s.working && !staleSignal) {
+      const best = s.working.side === 'buy' ? bid : ask;
+      if (Math.abs(s.working.px - best) > 1e-12) { this.act(s, { kind: 'cancel', reason: 'requote' }); return; }
     }
     if (s.pos.sz !== 0) {
       const long = s.pos.sz > 0;

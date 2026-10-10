@@ -38,11 +38,14 @@ export class Engine {
         pos: { sz: 0, avgPx: 0, openedAt: 0 }, working: null, busy: false, lastActionAt: 0, fair: null, edges: null, block: 'warming up', trip: null, hist: [],
       });
     }
-    if (process.env.DATA_FRESH === '1') {
-      // each shadow/live session starts with an empty history file, so short runs don't mix samples
-      // WARNING: also wipes live-mode history (use DATA_FRESH=0 in live to preserve restart continuity).
+    if (process.env.DATA_FRESH === '1' && exec.mode === 'shadow') {
+      // In-memory only. Does NOT touch disk. Files still grow — use DATA_DIR to isolate sessions.
       this.fills = []; this.trips = [];
-      log('info', 'engine', 'DATA_FRESH=1 — starting with empty history');
+      log('info', 'engine', 'DATA_FRESH=1 (shadow only): skipping load of prior runs. Disk files unchanged.');
+    } else if (process.env.DATA_FRESH === '1') {
+      log('warn', 'engine', 'DATA_FRESH=1 ignored in live mode (restarts must preserve loss accounting).');
+      this.fills = load<Fill>('fills', exec.mode);
+      this.trips = load<RoundTrip>('trips', exec.mode);
     } else {
       this.fills = load<Fill>('fills', exec.mode);
       this.trips = load<RoundTrip>('trips', exec.mode);
@@ -92,33 +95,64 @@ export class Engine {
     const staleBook = !b || now - b.recvAt > CFG.staleBookMs;
     const staleSignal = !r || now - r.ts > CFG.staleSpotMs;
     if (staleBook) s.block = 'HL book stale';
-    // On a stale book, in live mode we MUST still run kill-state cancels (the resting order
-    // is real on the exchange). We just can't take new action (no prices to compute).
-    if (this.killed && staleBook && s.working) {
-      this.act(s, { kind: 'cancel', reason: `kill: stale book` });
+
+    // ---- Risk / cancellation handling runs on EVERY tick, not gated by signal freshness ----
+    // A stale signal (missing Binance ref) must never leave a real working order on the exchange.
+    if (s.busy) { s.block = 'order in flight'; return; }
+    if (this.killed) {
+      if (staleBook && !s.working && s.pos.sz === 0) { s.block = `killed: ${this.killed}`; return; }
+      // cancel first if quoting; otherwise flatten using live HL prices
+      if (s.working) { this.act(s, { kind: 'cancel', reason: 'kill' }); return; }
+      if (s.pos.sz !== 0 && !staleBook && b) {
+        const bid = b.bids[0]?.price, ask = b.asks[0]?.price;
+        if (bid > 0 && ask > 0) {
+          this.act(s, { kind: 'exit', side: s.pos.sz > 0 ? 'sell' : 'buy', sz: Math.abs(s.pos.sz), limitPx: s.pos.sz > 0 ? roundPx(bid * 0.999, s.meta.szDecimals, 'down') : roundPx(ask * 1.001, s.meta.szDecimals, 'up'), reason: 'stop' });
+          return;
+        }
+      }
+      s.block = `killed: ${this.killed}`;
       return;
     }
+
+    // ---- Signal-gated normal path ----
     if (staleBook) return;
-    if (staleSignal) { s.block = 'HL book stale (no signal)'; return; }
-    // note: in HL-only mode the stale-book gate above covers both feeds since the only feed is HL
-    if (CFG.signalSource === 'binance' && s.basis.n < 50) { s.block = `calibrating basis ${s.basis.n}/50`; return; }
-    if (CFG.signalSource === 'binance' && s.stats.series.length < 30) { s.block = 'warming momentum'; return; }
     const bid = b.bids[0]?.price, ask = b.asks[0]?.price;
     if (!(bid > 0 && ask > bid)) { s.block = 'no book'; return; }
+
+    // Book-based risk exits (stop, max-hold, working-order TTL) depend only on HL prices —
+    // run them even when the reference signal is stale, so a signal outage can't trap a position.
+    if (s.pos.sz === 0 && s.working) {
+      const w = s.working;
+      if (now - w.placedAt > CFG.makerTtlMs) { if (!s.busy) this.act(s, { kind: 'cancel', reason: 'ttl' }); return; }
+      if (!staleSignal) {
+        const best = w.side === 'buy' ? bid : ask;
+        if (Math.abs(w.px - best) > 1e-12) { if (!s.busy) this.act(s, { kind: 'cancel', reason: 'requote' }); return; }
+      }
+    }
+    if (s.pos.sz !== 0) {
+      const long = s.pos.sz > 0;
+      const pnlBps = ((long ? bid - s.pos.avgPx : s.pos.avgPx - ask) / s.pos.avgPx) * 1e4;
+      if (pnlBps < -CFG.stopBps) {
+        if (!s.busy) this.act(s, { kind: 'exit', side: long ? 'sell' : 'buy', sz: Math.abs(s.pos.sz), limitPx: long ? roundPx(bid * (1 - 5e-4), s.meta.szDecimals, 'down') : roundPx(ask * (1 + 5e-4), s.meta.szDecimals, 'up'), reason: 'stop' });
+        return;
+      }
+      if ((now - s.pos.openedAt) / 1000 > CFG.maxHoldSec) {
+        if (!s.busy) this.act(s, { kind: 'exit', side: long ? 'sell' : 'buy', sz: Math.abs(s.pos.sz), limitPx: long ? roundPx(bid * (1 - 5e-4), s.meta.szDecimals, 'down') : roundPx(ask * (1 + 5e-4), s.meta.szDecimals, 'up'), reason: 'time' });
+        return;
+      }
+    }
+
+    if (staleSignal) { s.block = 'HL book stale (no signal)'; return; }
+    if (CFG.signalSource === 'binance' && s.basis.n < 50) { s.block = `calibrating basis ${s.basis.n}/50`; return; }
+    if (CFG.signalSource === 'binance' && s.stats.series.length < 30) { s.block = 'warming momentum'; return; }
 
     const d = s.stats.drift();
     const fairBasis = CFG.signalSource === 'hl' ? 0 : s.basis.v;
     s.fair = fairPrice({ binanceRef: r.px, basisLog: fairBasis, mu: d.mu, horizonSec: CFG.horizonSec, ofi: s.stats.ofi(10, now), ofiWeightBps: CFG.ofiWeightBps });
     s.edges = edges({ fair: s.fair, bid, ask, pos: s.pos }, CFG);
-    if (s.busy) { s.block = 'order in flight'; return; }
 
     let a: Action | null;
-    if (this.killed) {
-      a = s.working ? { kind: 'cancel', reason: 'kill' } : s.pos.sz !== 0
-        ? { kind: 'exit', side: s.pos.sz > 0 ? 'sell' : 'buy', sz: Math.abs(s.pos.sz), limitPx: s.pos.sz > 0 ? roundPx(bid * 0.999, s.meta.szDecimals, 'down') : roundPx(ask * 1.001, s.meta.szDecimals, 'up'), reason: 'stop' }
-        : null;
-      s.block = `killed: ${this.killed}`;
-    } else {
+    {
       const gross = [...this.coins.values()].reduce((acc, c) => acc + Math.abs(c.pos.sz) * (mid(this.hl.books.get(c.coin)) || 0), 0);
       a = decide({ fair: s.fair, bid, ask, pos: s.pos, working: s.working, now, grossUsd: gross, szDecimals: s.meta.szDecimals }, CFG);
       s.block = a ? '' : s.working ? 'quoting' : 'no edge';
@@ -180,7 +214,7 @@ export class Engine {
       let peak = 0; ll.forEach((c, k) => { if (Number.isFinite(c) && c > (ll[peak] ?? -1)) peak = k; });
       return {
         coin: s.coin, mid: m, bid: b?.bids[0]?.price ?? null, ask: b?.asks[0]?.price ?? null,
-        bookAgeMs: b ? now - b.recvAt : null, binance: r?.px ?? null, venue: r?.venue ?? null,
+        bookAgeMs: b ? now - b.recvAt : null, binance: r?.px ?? null, venue: r?.venue ?? null, signalSource: CFG.signalSource,
         basisBps: (s.basis.v || 0) * 1e4, fair: s.fair, fairBps: s.fair && m ? (s.fair / m - 1) * 1e4 : null, edges: s.edges,
         sigmaBps: s.stats.sigma() * 1e4, momBps: d.mom * 15 * 1e4, ofi: s.stats.ofi(10, now),
         pos: s.pos, unreal: u, working: s.working, block: s.block,

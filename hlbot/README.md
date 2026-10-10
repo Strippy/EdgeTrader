@@ -95,11 +95,16 @@ or VPS (nvm, docker node:22, etc.) before live use.
   worse (queue priority, partial fills at touch only). Read shadow `makerShare` and
   `netBpsPerTrip` as an *upper bound*, not a point estimate.
 - **Short shadow runs mix samples across restarts by default.** Fills/trips persist in
-  `data/{mode}-{fills,trips}.jsonl` and are loaded on boot. Use `DATA_FRESH=1` for each
-  session if you want each run's stats in isolation (also wipes live history — set
-  `DATA_FRESH=0` or omit in live).
+  `data/{mode}-{fills,trips}.jsonl` and are loaded on boot. Use `DATA_FRESH=1` (shadow only)
+  to skip loading prior runs into memory — this does NOT touch disk, and is ignored in live
+  mode (restarts must preserve loss accounting). To truly isolate a session, point
+  `DATA_DIR` at a fresh directory.
 - **Signal-source switch changes the strategy meaning.** `SIGNAL_SOURCE=hl` disables
   basis calibration and lead-lag and changes the fair value to a Hyperliquid-only
   projection. Do not mix results from `binance` and `hl` modes in the same evaluation.
 - Sandbox/production environments where `binance.com` is geo-blocked (HTTP 451) cannot
   run the original cross-venue strategy. `SIGNAL_SOURCE=hl` exists for this case.
+- **`STALE_SPOT_MS` defaults differently per mode.** 1500 for the original Binance feed
+  (fast cadence), 5000 for `SIGNAL_SOURCE=hl` (Hyperliquid per-coin trade cadence is much
+  lower). This is a per-mode risk behaviour — verify with `env | grep STALE` or check the
+  `/api/state` `signalSource` field matches what you expect.

@@ -70,14 +70,21 @@ export class ShadowExecutor implements Executor {
   onTrade(t: HlTrade) {
     for (const o of [...this.orders.values()]) {
       if (o.coin !== t.coin) continue;
-      if ((o.side === 'buy' && t.px < o.px) || (o.side === 'sell' && t.px > o.px)) this.fill(o);
+      // Maker fills ONLY when a real trade prints through (or exactly at) our price, with correct aggressor direction:
+      // resting buy at p fills if a sell-aggressor prints <= p (they sold down into/through our level),
+      // or a buy-aggressor prints exactly at p (the queue ahead of us was consumed).
+      // resting sell at p fills if a buy-aggressor prints >= p, or a sell-aggressor prints exactly at p.
+      if (o.side === 'buy') {
+        if (t.side === 'A' && t.px <= o.px) this.fill(o);       // sell aggressor at/through our buy level
+        else if (t.side === 'B' && t.px === o.px) this.fill(o);  // buy aggressor at exactly our level (queue ahead consumed)
+      } else {
+        if (t.side === 'B' && t.px >= o.px) this.fill(o);       // buy aggressor at/through our sell level
+        else if (t.side === 'A' && t.px === o.px) this.fill(o); // sell aggressor at exactly our level
+      }
     }
   }
   onBook(b: HlBook) {
-    for (const o of [...this.orders.values()]) {
-      if (o.coin !== b.coin) continue;
-      if ((o.side === 'buy' && b.asks[0] && b.asks[0].price <= o.px) || (o.side === 'sell' && b.bids[0] && b.bids[0].price >= o.px)) this.fill(o);
-    }
+    // Book touch alone does NOT fill a maker order. Per user spec, maker fills count only when a real trade goes through the quoted price.
   }
 }
 

@@ -52,8 +52,11 @@ export const CFG = {
   leverage: num('LEVERAGE', 3),
 
   // --- staleness ---
-  staleSpotMs: num('STALE_SPOT_MS', 5000),
-  staleBookMs: num('STALE_BOOK_MS', 3000),
+  /** Binance reference staleness. Default 1500 for the original Binance-feed design; 5000 for
+   *  Hyperliquid-only (HL per-coin trade cadence is much lower). Set via env, not per-mode, so
+   *  that mixing modes doesn't silently change risk behaviour. */
+  staleSpotMs: num('STALE_SPOT_MS', (process.env.SIGNAL_SOURCE === 'hl' ? 5000 : 1500)),
+  staleBookMs: num('STALE_BOOK_MS', 10_000),
 
   // --- model (shared with stats.ts) ---
   volHalfLifeFast: num('VOL_HL_FAST', 60),
@@ -75,6 +78,7 @@ export const CFG = {
 
 export function assertConfig() {
   if (CFG.mode !== 'shadow' && CFG.mode !== 'live') throw new Error('MODE must be shadow|live');
+  if (CFG.signalSource !== 'binance' && CFG.signalSource !== 'hl') throw new Error('SIGNAL_SOURCE must be binance|hl');
   if (CFG.signalSource === 'hl' && CFG.mode === 'live')
     throw new Error('SIGNAL_SOURCE=hl is experimental: live execution is not permitted in this mode');
   if (CFG.mode === 'live') {

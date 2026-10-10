@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Polybot Terminal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#05080d;--panel:#0a1018;--panel2:#0d1520;--line:#1a2635;--line2:#24364b;
+  --txt:#c9d6e4;--dim:#6e8197;--faint:#3d4d60;
+  --green:#2fe39a;--red:#ff4d6a;--amber:#ffc531;--cyan:#38d6ff;--violet:#9b7bff;--blue:#3b82f6;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--txt);font:12px/1.35 'JetBrains Mono',ui-monospace,monospace}
+body{padding:8px;min-height:100vh}
+.mono{font-variant-numeric:tabular-nums}
+.g{color:var(--green)}.r{color:var(--red)}.a{color:var(--amber)}.c{color:var(--cyan)}.d{color:var(--dim)}.v{color:var(--violet)}
+header{display:flex;align-items:center;gap:14px;border:1px solid var(--line);background:linear-gradient(180deg,#0b1320,#070b11);padding:8px 12px;flex-wrap:wrap}
+.logo{width:34px;height:34px;border-radius:6px;background:linear-gradient(135deg,#1f4fd6,#38d6ff);display:grid;place-items:center;font-weight:800;color:#fff}
+.title small{display:block;color:var(--dim);font-size:10px;letter-spacing:.08em}
+.title b{font-size:15px;letter-spacing:.06em}.title b span{color:var(--cyan)}
+.badge{font-size:10px;padding:2px 6px;border:1px solid;border-radius:3px;letter-spacing:.08em;font-weight:600}
+.badge.shadow{color:var(--amber);border-color:var(--amber)}.badge.live{color:var(--red);border-color:var(--red);animation:blink 1.2s infinite}
+@keyframes blink{50%{opacity:.4}}
+.hstats{display:flex;gap:18px;margin-left:auto;flex-wrap:wrap}
+.hs small{display:block;color:var(--dim);font-size:9px;letter-spacing:.08em}.hs b{font-size:14px}
+.clock{font-size:18px;font-weight:600}
+.tape{overflow:hidden;white-space:nowrap;border:1px solid var(--line);border-top:0;background:#070b11;height:22px;line-height:22px;position:relative}
+.tape .live{position:absolute;left:0;top:0;bottom:0;background:var(--red);color:#fff;padding:0 8px;font-weight:800;z-index:2;font-size:11px}
+.tape .roll{display:inline-block;padding-left:100%;animation:roll 60s linear infinite}
+@keyframes roll{to{transform:translateX(-100%)}}
+.tape i{font-style:normal;margin-right:26px}
+.grid{display:grid;gap:8px;margin-top:8px}
+.r1{grid-template-columns:300px 1fr 360px}
+.r2{grid-template-columns:190px 1fr 250px}
+.r3{grid-template-columns:1.1fr 1fr}
+.r4{grid-template-columns:1fr}
+@media (max-width:1100px){.r1,.r2,.r3{grid-template-columns:1fr}}
+.p{border:1px solid var(--line);background:var(--panel);padding:8px;min-width:0;position:relative}
+.p h3{font-size:10px;letter-spacing:.12em;color:var(--txt);font-weight:600;margin-bottom:6px;display:flex;justify-content:space-between;gap:8px}
+.p h3::before{content:'◆ ';color:var(--cyan)}
+.p h3 em{font-style:normal;color:var(--dim);font-weight:400}
+.big{font-size:30px;font-weight:800;letter-spacing:-.02em}
+.kv{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px}
+.kv div small{display:block;color:var(--dim);font-size:9px;letter-spacing:.06em}.kv div b{font-size:13px}
+canvas{display:block;width:100%}
+.side{display:flex;flex-direction:column;gap:6px}
+.side .t{border:1px solid var(--line);background:var(--panel2);padding:4px 6px}
+.side .t small{color:var(--dim);font-size:9px;display:block}.side .t b{font-size:13px}
+.flex{display:flex;gap:8px}.flex>*{flex:1;min-width:0}
+table{width:100%;border-collapse:collapse;font-size:11px}
+th{color:var(--dim);font-weight:400;text-align:left;font-size:9px;letter-spacing:.06em;border-bottom:1px solid var(--line);padding:3px 4px;position:sticky;top:0;background:var(--panel)}
+td{padding:2px 4px;border-bottom:1px solid #0f1824;white-space:nowrap}
+tr.sel td{background:#0f2133}
+tbody tr{cursor:pointer}
+.scroll{max-height:300px;overflow:auto}
+.ladder{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.lad{font-size:11px}
+.lad .row{display:flex;justify-content:space-between;position:relative;padding:1px 4px}
+.lad .row .bar{position:absolute;top:0;bottom:0;right:0;opacity:.22}
+.lad .ask .bar{background:var(--red)}.lad .bid .bar{background:var(--green)}
+.lad .mid{color:var(--dim);font-size:10px;text-align:center;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin:2px 0}
+.inputs .tile{border:1px solid var(--line2);background:#08111b;padding:4px 6px;margin-bottom:6px}
+.inputs .tile small{color:var(--dim);font-size:9px;display:flex;justify-content:space-between}
+.inputs .tile b{font-size:12px}
+.inv{border:1px solid var(--line2);background:#08111b;padding:5px 7px;margin-bottom:5px}
+.inv .h{display:flex;justify-content:space-between;font-size:10px}
+.inv .bar{height:5px;background:#132131;margin-top:4px;display:flex}
+.inv .bar i{display:block;height:100%}
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px}
+@media (max-width:700px){.tiles{grid-template-columns:repeat(2,1fr)}}
+.tiles div{border:1px solid var(--line2);padding:4px 6px;background:#08111b}
+.tiles small{display:block;color:var(--dim);font-size:9px;letter-spacing:.05em}.tiles b{font-size:15px}
+.wire{font-size:10.5px;max-height:150px;overflow:auto}
+.wire div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:4px;vertical-align:middle}
+.empty{color:var(--dim);padding:20px;text-align:center}
+.banner{border:1px solid var(--amber);color:var(--amber);padding:6px 10px;margin-top:8px;display:none;font-size:11px}
+footer{color:var(--faint);font-size:10px;margin-top:8px;text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">PB</div>
+  <div class="title"><small>◆ HFT DIRECTIONAL · DYNAMIC HEDGE · TWAP FAIR VALUE</small><b>POLYBOT <span>// POLYMARKET UP/DOWN ENGINE</span></b>
+    <small id="sub">connecting…</small></div>
+  <span class="badge shadow" id="mode">—</span>
+  <div class="hstats" id="hstats"></div>
+  <div class="clock mono" id="clock">--:--:--</div>
+</header>
+<div class="tape"><span class="live">● LIVE FEED</span><span class="roll" id="roll"></span></div>
+<div class="banner" id="banner"></div>
+
+<div class="grid r1">
+  <div class="p">
+    <h3>WALLET · PNL <em id="pnlmode"></em></h3>
+    <small class="d">ALL-TIME REALIZED PNL</small>
+    <div class="big mono" id="pnl">—</div>
+    <div class="d" id="pnlsub" style="font-size:11px"></div>
+    <div class="kv" id="wkv"></div>
+    <h3 style="margin-top:10px">EQUITY CURVE <em>settled windows</em></h3>
+    <canvas id="eq" height="90"></canvas>
+  </div>
+  <div class="p">
+    <h3>FAIR vs BOOK · <span id="selname" class="c">—</span><em id="selblock"></em></h3>
+    <div class="flex">
+      <div style="flex:3"><canvas id="fair" height="210"></canvas>
+        <div class="d" style="font-size:10px;margin-top:4px"><span class="c">━ p_model(UP)</span> · <span class="g">━ ask UP</span> · <span class="r">━ 1 − ask DOWN</span> · <span class="a">┅ bid UP</span></div></div>
+      <div class="side" style="flex:1" id="fairside"></div>
+    </div>
+  </div>
+  <div class="p">
+    <h3><span id="spotname">SPOT</span><em id="spotsub"></em></h3>
+    <canvas id="spot" height="120"></canvas>
+    <h3 style="margin-top:6px">ORDER BOOK <em>UP │ DOWN</em></h3>
+    <div class="ladder"><div class="lad" id="ladU"></div><div class="lad" id="ladD"></div></div>
+  </div>
+</div>
+
+<div class="grid r2">
+  <div class="p inputs"><h3>MODEL INPUTS</h3><div id="inputs"></div></div>
+  <div class="p"><h3>NEURAL SHELL <em id="nsub">inputs → fair value → edge</em></h3><canvas id="shell" height="360"></canvas></div>
+  <div class="p"><h3>LADDER / HEDGE <em>inventory</em></h3><div id="invs" class="scroll" style="max-height:380px"></div></div>
+</div>
+
+<div class="grid r3">
+  <div class="p"><h3>EXECUTION TAPE · TIME & SALES <em id="tapesub"></em></h3>
+    <div class="scroll"><table><thead><tr><th>TIME</th><th>MKT</th><th>SIDE</th><th>WHY</th><th>PX</th><th>SHARES</th><th>$</th><th>FEE</th><th>P_MDL</th><th>EDGE</th></tr></thead><tbody id="fills"></tbody></table></div>
+  </div>
+  <div class="p"><h3>PAIR COST DENSITY · UP × DOWN UNIT SQUARE <em>avg cost per window</em></h3>
+    <div class="flex"><canvas id="pairs" height="230"></canvas><canvas id="edges" height="230"></canvas></div>
+  </div>
+</div>
+<div class="tiles" id="tiles"></div>
+
+<div class="grid r4">
+  <div class="p"><h3>ACTIVE WINDOWS <em>tap a row to focus</em></h3>
+    <div class="scroll"><table><thead><tr><th>MARKET</th><th>τ</th><th>PRICE TO BEAT</th><th>S (CL-EQ)</th><th>P_UP</th><th>ASK U</th><th>ASK D</th><th>SET</th><th>EDGE U</th><th>EDGE D</th><th>INV U/D</th><th>STATE</th></tr></thead><tbody id="mkts"></tbody></table></div>
+  </div>
+  <div class="grid r3" style="margin-top:0">
+    <div class="p"><h3>WIRE INSPECTOR · CLOB + BINANCE + CHAINLINK <em id="wiresub"></em></h3><div class="wire mono" id="wire"></div></div>
+    <div class="p"><h3>SETTLEMENTS</h3>
+      <div class="scroll" style="max-height:150px"><table><thead><tr><th>WINDOW</th><th>WIN</th><th>UP/DN SH</th><th>PAIR $</th><th>COST</th><th>PNL</th></tr></thead><tbody id="sets"></tbody></table></div></div>
+  </div>
+</div>
+<footer>All numbers stream from Binance, the Polymarket CLOB and Chainlink via PolyBolt. SHADOW mode = real books, hypothetical fills (no queue modelling). Not financial advice.</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const C = { g: css('--green'), r: css('--red'), a: css('--amber'), c: css('--cyan'), v: css('--violet'), d: css('--dim'), f: css('--faint'), l: css('--line'), t: css('--txt') };
+const fmt = (x, d = 2) => x === null || x === undefined || !isFinite(x) ? '—' : Number(x).toFixed(d);
+const money = (x, d = 2) => x === null || x === undefined || !isFinite(x) ? '—' : (x < 0 ? '-$' : '$') + Math.abs(x).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+const sgn = (x, d = 2, unit = '') => x === null || !isFinite(x) ? '—' : `<span class="${x >= 0 ? 'g' : 'r'}">${x >= 0 ? '+' : ''}${x.toFixed(d)}${unit}</span>`;
+const cents = x => x === null || !isFinite(x) ? '—' : sgn(x * 100, 2, '¢');
+const pct = x => x === null || !isFinite(x) ? '—' : (x * 100).toFixed(1) + '%';
+const hms = t => new Date(t).toISOString().slice(11, 19);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+let S = null, sel = null;
+
+function fit(cv) {
+  const r = devicePixelRatio || 1, w = cv.clientWidth, h = +cv.getAttribute('height');
+  if (cv.width !== w * r || cv.height !== h * r) { cv.width = w * r; cv.height = h * r; cv.style.height = h + 'px'; }
+  const x = cv.getContext('2d'); x.setTransform(r, 0, 0, r, 0, 0); return [x, w, h];
+}
+function lines(cv, series, opt = {}) {
+  const [x, w, h] = fit(cv); x.clearRect(0, 0, w, h);
+  const pts = series.flatMap(s => s.pts.filter(p => isFinite(p[1])));
+  if (pts.length < 2) { x.fillStyle = C.d; x.fillText('waiting for live data…', 10, h / 2); return; }
+  let x0 = Math.min(...pts.map(p => p[0])), x1 = Math.max(...pts.map(p => p[0]));
+  let y0 = opt.y0 ?? Math.min(...pts.map(p => p[1])), y1 = opt.y1 ?? Math.max(...pts.map(p => p[1]));
+  if (y1 - y0 < 1e-12) { y0 -= 1; y1 += 1; }
+  const pad = opt.pad ?? 34, X = t => 4 + (t - x0) / (x1 - x0 || 1) * (w - pad - 8), Y = v => 6 + (1 - (v - y0) / (y1 - y0)) * (h - 18);
+  x.strokeStyle = C.l; x.lineWidth = 1; x.fillStyle = C.d; x.font = '9px JetBrains Mono';
+  for (let k = 0; k <= 4; k++) { const v = y0 + (y1 - y0) * k / 4, y = Y(v); x.beginPath(); x.moveTo(4, y); x.lineTo(w - pad, y); x.stroke(); x.fillText(opt.yfmt ? opt.yfmt(v) : v.toFixed(2), w - pad + 3, y + 3); }
+  for (const h0 of opt.hlines ?? []) { x.setLineDash([3, 3]); x.strokeStyle = h0.c; x.beginPath(); x.moveTo(4, Y(h0.v)); x.lineTo(w - pad, Y(h0.v)); x.stroke(); x.setLineDash([]); }
+  for (const s of series) {
+    x.strokeStyle = s.c; x.lineWidth = s.w ?? 1.4; x.setLineDash(s.dash ?? []); x.beginPath(); let on = false;
+    for (const p of s.pts) { if (!isFinite(p[1])) { on = false; continue; } on ? x.lineTo(X(p[0]), Y(p[1])) : x.moveTo(X(p[0]), Y(p[1])); on = true; }
+    x.stroke(); x.setLineDash([]);
+  }
+}
+
+// ---------------------------------------------------------------- neural shell (driven by live model state)
+const shell = { nodes: [], t: 0 };
+(function initShell() { const N = 260; for (let i = 0; i < N; i++) { const y = 1 - 2 * (i + .5) / N, r = Math.sqrt(1 - y * y), th = i * 2.399963; shell.nodes.push([Math.cos(th) * r, y, Math.sin(th) * r]); } })();
+function drawShell() {
+  const cv = $('shell'), [x, w, h] = fit(cv); x.clearRect(0, 0, w, h); shell.t += 0.006;
+  const m = selMarket(), a = selAsset();
+  const z = m?.fair?.z ?? 0, edge = Math.max(Math.abs(m?.edgeUp ?? 0), Math.abs(m?.edgeDown ?? 0));
+  const heat = Math.min(1, edge * 12), lean = Math.tanh(z / 2);
+  const cx = w * 0.42, cy = h / 2, R = Math.min(w * 0.26, h * 0.42);
+  const rot = shell.t * (0.6 + heat), ct = Math.cos(rot), st = Math.sin(rot);
+  const P = shell.nodes.map(([X, Y, Z]) => { const xr = X * ct - Z * st, zr = X * st + Z * ct; const sq = 1 + 0.08 * Math.sin(shell.t * 4 + Y * 6) * heat; return [cx + xr * R * sq, cy + Y * R * sq, zr]; });
+  // inputs flowing in from the left
+  const ins = [a?.basisBps, a?.sigmaBps, m?.fair?.pUp, m?.askUp, m?.edgeUp, a?.ofi];
+  ins.forEach((v, i) => { const y = h * (0.12 + i * 0.152), k = isFinite(v) ? 0.25 + Math.min(.75, Math.abs(v)) : .1;
+    for (let j = 0; j < 7; j++) { const tgt = P[(i * 37 + j * 11) % P.length]; x.strokeStyle = `rgba(255,197,49,${0.07 + k * 0.25})`; x.beginPath(); x.moveTo(6, y); x.bezierCurveTo(w * .18, y, tgt[0] - R * .6, tgt[1], tgt[0], tgt[1]); x.stroke(); } });
+  // mesh
+  for (let i = 0; i < P.length; i++) for (let j = i + 1; j < Math.min(P.length, i + 9); j++) {
+    const p = P[i], q = P[j], dep = (p[2] + q[2] + 2) / 4;
+    x.strokeStyle = `rgba(${lean > 0 ? '47,227,154' : '255,77,106'},${0.05 + dep * 0.25 * (0.4 + heat)})`; x.beginPath(); x.moveTo(p[0], p[1]); x.lineTo(q[0], q[1]); x.stroke();
+  }
+  for (const p of P) { const dep = (p[2] + 1) / 2; x.fillStyle = `rgba(255,${180 + 60 * dep | 0},${90 + 120 * (1 - heat) | 0},${0.25 + 0.75 * dep})`; x.fillRect(p[0] - 1.2, p[1] - 1.2, 2.4, 2.4); }
+  // output lobes = UP / DOWN probability
+  const pu = m?.fair?.pUp ?? .5;
+  [[pu, -1, C.g, 'UP'], [1 - pu, 1, C.r, 'DOWN']].forEach(([p, s, col, lab]) => {
+    const ox = cx + R * 1.55, oy = cy + s * R * 0.45, rr = R * (0.18 + 0.4 * p);
+    x.strokeStyle = col; x.globalAlpha = .35 + .5 * p; x.beginPath(); x.ellipse(ox, oy, rr * 1.2, rr * .8, rot * .3 * s, 0, 7); x.stroke();
+    x.beginPath(); x.moveTo(cx + R * .9, cy); x.quadraticCurveTo(cx + R * 1.2, oy, ox - rr, oy); x.stroke(); x.globalAlpha = 1;
+    x.fillStyle = col; x.font = '600 11px JetBrains Mono'; x.fillText(`${lab} ${(p * 100).toFixed(1)}%`, ox - rr * .7, oy + 4);
+  });
+  x.fillStyle = C.a; x.font = '10px JetBrains Mono';
+  x.fillText(m ? `P_MODEL UP ${fmt(m.fair?.pUp, 3)} · BOOK ${fmt(m.askUp, 3)} · EDGE ${fmt((m.edgeUp ?? 0) * 100, 2)}¢ · z ${fmt(m.fair?.z, 2)}` : 'no active window', 10, h - 8);
+  requestAnimationFrame(drawShell);
+}
+
+const selMarket = () => S?.markets.find(m => m.slug === sel) ?? S?.markets.find(m => m.live) ?? null;
+const selAsset = () => { const m = selMarket(); return S?.assets.find(a => a.asset === (m?.asset ?? 'btc')) ?? S?.assets[0]; };
+
+function render() {
+  if (!S) return;
+  const st = S.stats, m = selMarket(), a = selAsset();
+  $('mode').textContent = S.mode.toUpperCase(); $('mode').className = 'badge ' + S.mode;
+  $('pnlmode').textContent = S.mode === 'shadow' ? 'SHADOW · hypothetical fills on live books' : 'LIVE WALLET';
+  $('banner').style.display = S.killed ? 'block' : 'none'; $('banner').textContent = S.killed ? '⚠ KILL SWITCH: ' + S.killed : '';
+  $('clock').textContent = hms(S.now) + ' UTC';
+  const f = S.feeds;
+  $('sub').innerHTML = `BINANCE ${f.binancePerp < 2000 ? '<span class="g">PERP</span>' : '<span class="r">PERP</span>'} · ${f.binanceSpot < 2000 ? '<span class="g">SPOT</span>' : '<span class="r">SPOT</span>'} · CLOB ${f.clob ? '<span class="g">OK</span>' : '<span class="r">DOWN</span>'} · CHAINLINK <span class="${f.chainlink === 'live' ? 'g' : 'a'}">${f.chainlink.toUpperCase()}</span>`;
+  $('hstats').innerHTML = S.assets.map(x => `<div class="hs"><small>${x.asset.toUpperCase()} ${x.venue ?? ''}</small><b class="mono">${x.px ? (x.px > 100 ? x.px.toFixed(1) : x.px.toFixed(4)) : '—'}</b></div>`).join('') +
+    (m ? `<div class="hs"><small>P_MODEL UP</small><b class="c mono">${fmt(m.fair?.pUp, 3)}</b></div><div class="hs"><small>MODEL EDGE</small><b class="mono">${cents(Math.max(m.edgeUp ?? -1, m.edgeDown ?? -1))}</b></div>` : '');
+
+  // ticker
+  const items = [...S.tape.slice(0, 12).map(t => `<i class="${t.side === 'up' ? 'g' : 'r'}">${t.reason.toUpperCase()} ${t.asset.toUpperCase()} ${t.tf} BUY ${t.side.toUpperCase()} @ ${t.price.toFixed(3)} · ${money(t.notional)}</i>`),
+    ...S.markets.filter(x => x.live).map(x => `<i>${x.asset.toUpperCase()} ${x.tf} · FAIR ${fmt(x.fair?.pUp, 3)} vs BOOK ${fmt(x.askUp, 3)} · SET ${fmt(x.setCost, 3)}</i>`)];
+  const roll = items.join('') || '<i class="d">waiting for markets…</i>'; if ($('roll').dataset.h !== roll) { $('roll').innerHTML = roll; $('roll').dataset.h = roll; }
+
+  // wallet
+  $('pnl').innerHTML = `<span class="${st.realized >= 0 ? 'g' : 'r'}">${st.realized >= 0 ? '+' : ''}${money(st.realized)}</span>`;
+  $('pnlsub').innerHTML = `UNREALIZED ${sgn(st.unrealized)} · AT RISK ${money(st.openCost)}`;
+  $('wkv').innerHTML = [['TRADES 24H', st.trades24h], ['WIN RATE', pct(st.winRate)], ['AVG HOLD', st.avgHoldSec ? (st.avgHoldSec / 60).toFixed(1) + 'm' : '—'],
+    ['AVG TRADE', money(st.avgTrade)], ['MED TRADE', money(st.medTrade)], ['FILLS/HR', fmt(st.fillsPerHr, 1)],
+    ['WINDOW WIN%', pct(st.marketWinRate)], ['AVG EDGE', st.avgEdge === null ? '—' : (st.avgEdge * 100).toFixed(2) + '¢'], ['ENTRY/HEDGE/PAIR', st.byReason.map(b => b.n).join('/')]]
+    .map(([k, v]) => `<div><small>${k}</small><b class="mono">${v}</b></div>`).join('');
+  lines($('eq'), [{ pts: st.equity, c: C.g }], { yfmt: v => '$' + v.toFixed(0), hlines: [{ v: 0, c: C.f }] });
+
+  // fair vs book
+  if (m) {
+    $('selname').textContent = `${m.asset.toUpperCase()} ${m.tf} · ${new Date(m.start).toISOString().slice(11, 16)}–${new Date(m.end).toISOString().slice(11, 16)} UTC`;
+    $('selblock').textContent = m.block ? '⏸ ' + m.block : '● armed';
+    const H = m.hist;
+    lines($('fair'), [{ pts: H.map(h => [h.t, h.p]), c: C.c, w: 2 }, { pts: H.map(h => [h.t, h.au]), c: C.g }, { pts: H.map(h => [h.t, 1 - h.ad]), c: C.r }, { pts: H.map(h => [h.t, h.bu]), c: C.a, dash: [3, 3], w: 1 }], { y0: 0, y1: 1, hlines: [{ v: .5, c: C.f }] });
+    const tau = Math.max(0, (m.end - S.now) / 1000);
+    $('fairside').innerHTML = [['PRICE TO BEAT', m.K ? m.K.toFixed(m.K > 100 ? 2 : 5) : '—', m.refSource ?? 'pending'], ['S · CL-EQUIV', m.fair ? m.fair.S.toFixed(m.fair.S > 100 ? 2 : 5) : '—', ''],
+      ['τ LEFT', `${Math.floor(tau / 60)}:${String(Math.floor(tau % 60)).padStart(2, '0')}`, tau < 60 ? 'inside TWAP' : ''], ['z · σ_F', `${fmt(m.fair?.z, 2)}`, m.fair ? '$' + m.fair.sd.toFixed(2) : ''],
+      ['EDGE UP / DN', `${cents(m.edgeUp)}`, `${cents(m.edgeDown)}`], ['SET COST', fmt(m.setCost, 3), m.setCost !== null && m.setCost < 1 ? 'cheap set' : '']]
+      .map(([k, v, s]) => `<div class="t"><small>${k}</small><b class="mono">${v}</b> <span class="d" style="font-size:10px">${s}</span></div>`).join('');
+    const lad = (b, el) => { const mx = Math.max(1, ...b.asks.map(l => l.size), ...b.bids.map(l => l.size));
+      el.innerHTML = b.asks.slice(0, 6).reverse().map(l => `<div class="row ask"><i class="bar" style="width:${l.size / mx * 100}%"></i><span class="r">${l.price.toFixed(3)}</span><span>${l.size.toFixed(0)}</span></div>`).join('') +
+        `<div class="mid">${el.id === 'ladU' ? 'UP' : 'DOWN'} · spr ${b.asks[0] && b.bids[0] ? (b.asks[0].price - b.bids[0].price).toFixed(3) : '—'}</div>` +
+        b.bids.slice(0, 6).map(l => `<div class="row bid"><i class="bar" style="width:${l.size / mx * 100}%"></i><span class="g">${l.price.toFixed(3)}</span><span>${l.size.toFixed(0)}</span></div>`).join(''); };
+    lad(m.booksUp, $('ladU')); lad(m.booksDown, $('ladD'));
+  }
+  if (a) {
+    $('spotname').textContent = `${a.asset.toUpperCase()} SPOT · ${a.venue ?? ''}`;
+    $('spotsub').innerHTML = `CL ${a.cl ? a.cl.toFixed(2) : '—'} · TWAP ${a.twap ? a.twap.toFixed(2) : '—'} · basis ${fmt(a.basisBps, 2)}bp`;
+    lines($('spot'), [{ pts: a.series, c: C.c }], { yfmt: v => v > 100 ? v.toFixed(0) : v.toFixed(4), hlines: m?.K ? [{ v: m.K * Math.exp(-(a.basisBps / 1e4)), c: C.a }] : [] });
+    $('inputs').innerHTML = [['SPOT − REF', m?.fair && m.K ? sgn((m.fair.S - m.K), 2, '') : '—', 'S − K'], ['σ / SEC', fmt(a.sigmaBps, 2) + 'bp', 'EWMA'], ['P_MODEL · UP', fmt(m?.fair?.pUp, 3), 'TWAP-aware'],
+      ['BOOK · UP ASK', fmt(m?.askUp, 3), 'CLOB'], ['MODEL EDGE', cents(m?.edgeUp ?? null), 'after fee'], ['MOMENTUM 15s', sgn(a.momBps, 2, 'bp'), 'drift'], ['ACCEL', sgn(a.accelBps, 2, 'bp'), ''], ['FLOW IMBAL 10s', sgn(a.ofi, 2), 'perp takers'],
+      ['INV U/D', m ? `${m.inv.up.shares.toFixed(0)}/${m.inv.down.shares.toFixed(0)}` : '—', 'shares']]
+      .map(([k, v, s]) => `<div class="tile"><small><span>${k}</span><span>${s}</span></small><b class="mono">${v}</b></div>`).join('');
+  }
+
+  // inventory ladder
+  const held = S.markets.filter(x => x.inv.up.shares + x.inv.down.shares > 0);
+  $('invs').innerHTML = held.length ? held.map(x => { const u = x.inv.up.shares, d = x.inv.down.shares, t = Math.max(u, d) || 1;
+    return `<div class="inv"><div class="h"><b>${x.asset.toUpperCase()} ${x.tf} ${new Date(x.start).toISOString().slice(11, 16)}</b><span class="${x.settled ? (x.settled.pnl >= 0 ? 'g' : 'r') : 'd'}">${x.settled ? (x.settled.pnl >= 0 ? '+' : '') + money(x.settled.pnl) : 'open'}</span></div>
+    <div class="h d"><span class="g">UP ${u.toFixed(0)} @ ${x.avgUp.toFixed(3)}</span><span class="r">DN ${d.toFixed(0)} @ ${x.avgDown.toFixed(3)}</span></div>
+    <div class="h d"><span>pairs ${x.pairs.toFixed(0)}</span><span class="${x.avgUp + x.avgDown < 1 ? 'g' : 'a'}">${x.pairs > 0 ? 'set $' + (x.avgUp + x.avgDown).toFixed(3) : 'directional'}</span></div>
+    <div class="bar"><i style="width:${u / t * 50}%;background:${C.g}"></i><i style="width:${d / t * 50}%;background:${C.r}"></i></div></div>`; }).join('') : '<div class="empty">flat</div>';
+
+  // tape
+  $('tapesub').textContent = `${st.trades} fills`;
+  $('fills').innerHTML = S.tape.slice(0, 60).map(t => `<tr><td>${hms(t.ts)}</td><td>${t.asset.toUpperCase()} ${t.tf}</td><td class="${t.side === 'up' ? 'g' : 'r'}">${t.side.toUpperCase()}</td><td class="${t.reason === 'entry' ? 'c' : t.reason === 'pair' ? 'v' : 'a'}">${t.reason}</td><td>${t.price.toFixed(3)}</td><td>${t.shares.toFixed(1)}</td><td>${money(t.notional)}</td><td>${t.fee.toFixed(3)}</td><td>${t.pModel.toFixed(3)}</td><td>${cents(t.edge)}</td></tr>`).join('') || '<tr><td colspan="10" class="empty">no fills yet</td></tr>';
+
+  // pair density + edge histogram
+  { const [x, w, h] = fit($('pairs')); x.clearRect(0, 0, w, h); const P = 24, sz = Math.min(w - P - 6, h - P - 6), X = v => P + v * sz, Y = v => 6 + (1 - v) * sz;
+    x.strokeStyle = C.l; x.strokeRect(P, 6, sz, sz); x.fillStyle = 'rgba(47,227,154,.06)'; x.beginPath(); x.moveTo(X(0), Y(0)); x.lineTo(X(1), Y(0)); x.lineTo(X(0), Y(1)); x.fill();
+    x.strokeStyle = C.t; x.setLineDash([4, 3]); x.beginPath(); x.moveTo(X(0), Y(1)); x.lineTo(X(1), Y(0)); x.stroke(); x.setLineDash([]);
+    x.fillStyle = C.d; x.font = '9px JetBrains Mono'; x.fillText('avg UP →', P + 2, h - 4); x.save(); x.translate(10, sz / 2 + 30); x.rotate(-Math.PI / 2); x.fillText('avg DOWN →', 0, 0); x.restore(); x.fillText('UP+DOWN = $1', X(.55), Y(.5));
+    const pts = [...S.markets.filter(m => m.pairs > 0 && !m.settled).map(m => [m.avgUp, m.avgDown, 1]), ...S.settlements.filter(s => s.upShares && s.downShares).map(s => [null, null, 0, s])];
+    S.markets.filter(m => m.pairs > 0).forEach(m => { x.fillStyle = m.avgUp + m.avgDown < 1 ? C.g : C.r; x.globalAlpha = m.settled ? .5 : 1; x.beginPath(); x.arc(X(m.avgUp), Y(m.avgDown), 4, 0, 7); x.fill(); x.globalAlpha = 1; });
+    if (!S.markets.some(m => m.pairs > 0)) { x.fillStyle = C.d; x.fillText('no hedged windows yet', P + 10, 24); } }
+  { const [x, w, h] = fit($('edges')); x.clearRect(0, 0, w, h); const bins = new Array(16).fill(0); S.tape.forEach(t => { const b = Math.max(0, Math.min(15, Math.floor((t.edge * 100 + 2) / 0.75))); bins[b]++; });
+    const mx = Math.max(1, ...bins), bw = (w - 10) / 16; bins.forEach((n, i) => { const bh = n / mx * (h - 30); x.fillStyle = i < 3 ? C.r : C.a; x.fillRect(5 + i * bw + 1, h - 18 - bh, bw - 2, bh); });
+    x.fillStyle = C.d; x.font = '9px JetBrains Mono'; x.fillText('EDGE PER FILL (¢) −2 … +10', 6, h - 4); }
+
+  const last = S.tape[0], hp = S.markets.filter(m => m.pairs > 0);
+  $('tiles').innerHTML = [['LAST FILL', last ? `${money(last.notional)} @ ${last.price.toFixed(2)}` : '—'], ['AVG / MEDIAN $', `${money(st.avgTrade, 0)} / ${money(st.medTrade, 0)}`], ['EDGE / FILL', st.avgEdge === null ? '—' : (st.avgEdge * 100).toFixed(2) + '¢'], ['FILLS / HR', fmt(st.fillsPerHr, 1)],
+    ['AVG PAIR COST', st.avgPairCost === null ? '—' : (st.avgPairCost * 100).toFixed(2) + '¢'], ['EDGE / PAIR', st.avgPairCost === null ? '—' : ((1 - st.avgPairCost) * 100).toFixed(2) + '¢'], ['PAIRS UNDER $1', pct(st.pairsUnder1)], ['HEDGED INVENTORY', pct(st.hedgedShare)]]
+    .map(([k, v]) => `<div><small>${k}</small><b class="mono">${v}</b></div>`).join('');
+
+  // markets table
+  $('mkts').innerHTML = S.markets.map(x => { const tau = Math.max(0, (x.end - S.now) / 1000);
+    return `<tr data-s="${esc(x.slug)}" class="${x.slug === (m?.slug) ? 'sel' : ''}"><td>${x.asset.toUpperCase()} ${x.tf} ${new Date(x.start).toISOString().slice(11, 16)}${x.live ? ' <span class="g">●</span>' : ''}</td><td>${x.live ? `${Math.floor(tau / 60)}:${String(Math.floor(tau % 60)).padStart(2, '0')}` : (S.now < x.start ? 'next' : 'ended')}</td>
+    <td>${x.K ? x.K.toFixed(x.K > 100 ? 2 : 5) : '—'} <span class="d">${x.refSource ?? ''}</span></td><td>${x.fair ? x.fair.S.toFixed(x.fair.S > 100 ? 2 : 5) : '—'}</td><td class="c">${fmt(x.fair?.pUp, 3)}</td><td>${fmt(x.askUp, 3)}</td><td>${fmt(x.askDown, 3)}</td>
+    <td class="${x.setCost !== null && x.setCost < 1 ? 'g' : ''}">${fmt(x.setCost, 3)}</td><td>${cents(x.edgeUp)}</td><td>${cents(x.edgeDown)}</td><td>${x.inv.up.shares.toFixed(0)}/${x.inv.down.shares.toFixed(0)}</td><td class="d">${x.settled ? 'settled ' + x.settled.winner : esc(x.block || 'armed')}</td></tr>`; }).join('') || '<tr><td colspan="12" class="empty">discovering markets…</td></tr>';
+
+  $('wiresub').textContent = Object.entries(f.counts).map(([k, v]) => `${k} ${v}`).join(' · ') + ` · ${(f.bytes / 1024).toFixed(0)} KB`;
+  $('wire').innerHTML = S.wire.map(e => `<div><span class="d">${hms(e.t)}</span> <span class="${e.kind === 'error' ? 'r' : e.kind === 'warn' ? 'a' : 'c'}">${esc(e.src)}:${esc(e.kind)}</span> ${esc(e.msg)}</div>`).join('');
+  $('sets').innerHTML = S.settlements.map(s => `<tr><td>${s.asset.toUpperCase()} ${s.tf} ${s.slug.split('-').pop()}</td><td class="${s.winner === 'up' ? 'g' : 'r'}">${s.winner.toUpperCase()}</td><td>${s.upShares.toFixed(0)}/${s.downShares.toFixed(0)}</td><td>${s.pairCost ? s.pairCost.toFixed(3) : '—'}</td><td>${money(s.cost)}</td><td>${sgn(s.pnl)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">none yet</td></tr>';
+}
+
+$('mkts').addEventListener('click', e => { const tr = e.target.closest('tr[data-s]'); if (tr) { sel = tr.dataset.s; render(); } });
+function connect() {
+  const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
+  ws.onmessage = ev => { S = JSON.parse(ev.data); render(); };
+  ws.onclose = () => { $('sub').innerHTML = '<span class="r">engine disconnected — retrying</span>'; setTimeout(connect, 1500); };
+}
+connect(); requestAnimationFrame(drawShell);
+</script>
+</body>
+</html>

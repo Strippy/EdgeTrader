@@ -1,0 +1,31 @@
+{
+  "name": "hlbot",
+  "version": "1.0.0",
+  "description": "Hyperliquid perps lead-lag engine: Binance-led fair value, maker-first entries, shadow mode on live books",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "dependencies": {
+    "@nktkas/hyperliquid": "^0.33.3",
+    "dotenv": "^18.0.7",
+    "viem": "^2.57.4",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/ws": "^8.18.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

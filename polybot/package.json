@@ -1,0 +1,28 @@
+{
+  "name": "polybot",
+  "version": "1.0.0",
+  "description": "Polymarket crypto Up/Down HFT: Binance-led TWAP fair value, edge entries, opposite-side hedging into sub-$1 sets",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@polymarket/client": "^0.13.0",
+    "dotenv": "^18.0.7",
+    "viem": "^2.57.4",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/ws": "^8.18.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  }
+}

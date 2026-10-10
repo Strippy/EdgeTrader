@@ -1,7 +1,7 @@
 import { ReconnectingWS } from './ws.js';
 import { bus } from '../bus.js';
 
-export type Venue = 'spot' | 'perp';
+export type Venue = 'spot' | 'perp' | 'hl';
 export type Tick = { asset: string; venue: Venue; price: number; qty: number; ts: number; buyAggressor: boolean };
 
 /**

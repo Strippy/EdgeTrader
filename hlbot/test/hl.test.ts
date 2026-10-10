@@ -87,3 +87,73 @@ test('fair price and lead-lag detection', () => {
   assert.equal(peak, 3);
   assert.ok(Number.isNaN(pearson([1, 2], [1, 2])));
 });
+
+
+// --- Hyperliquid-only experimental mode (SIGNAL_SOURCE=hl) ---
+
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+async function runInChild(scriptTs: string, envExtra: Record<string, string>): Promise<string> {
+  const { execFileSync } = await import('node:child_process');
+  const dir = mkdtempSync(join(tmpdir(), 'hlbot-test-'));
+  const f = join(dir, 't.ts');
+  writeFileSync(f, scriptTs);
+  try {
+    return execFileSync('npx', ['tsx', f], { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env, ...envExtra }, maxBuffer: 1 << 20 });
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+}
+
+test('hl-only: venue=hl ticks drive ref(), momentum and ofi when SIGNAL_SOURCE=hl', async () => {
+  const script = `
+    import { AssetStats } from '${process.cwd()}/src/model/stats.js';
+    const s = new AssetStats('btc');
+    const t0 = Date.now() - 60000;
+    for (let i = 0; i < 60; i++) {
+      const ts = t0 + i * 1000;
+      const px = 100 + i * 0.01;
+      s.onTick({ asset: 'btc', venue: 'hl', price: px, qty: 1, ts, buyAggressor: i % 2 === 0 });
+      s.sample(ts + 1);
+    }
+    const now = t0 + 60000;
+    const r = s.ref(now);
+    const d = s.drift();
+    const ofi = s.ofi(30, now);
+    console.log(JSON.stringify({ hasRef: !!r, venue: r?.venue ?? null, px: r?.px ?? null, mom: d.mom, ofi }));
+  `;
+  const out = await runInChild(script, { SIGNAL_SOURCE: 'hl' });
+  const j = JSON.parse(out.trim().split('\n').pop()!);
+  assert.equal(j.hasRef, true, 'fresh hl tape must produce a reference');
+  assert.equal(j.venue, 'hl');
+  assert.ok(Math.abs(j.px - (100 + 59 * 0.01)) < 0.02, `ref px should be ~${100 + 59 * 0.01}, got ${j.px}`);
+  assert.ok(j.mom > 0, `drift.mom must be >0 on rising tape, got ${j.mom}`);
+  assert.ok(Math.abs(j.ofi) <= 1, `ofi must be in [-1,1], got ${j.ofi}`);
+});
+
+test('hl-only: stale hl tape yields null ref (must not trade on stale signal)', async () => {
+  const script = `
+    import { AssetStats } from '${process.cwd()}/src/model/stats.js';
+    const s = new AssetStats('btc');
+    s.onTick({ asset: 'btc', venue: 'hl', price: 100, qty: 1, ts: Date.now() - 60000, buyAggressor: true });
+    console.log(JSON.stringify({ hasRef: !!s.ref(Date.now()) }));
+  `;
+  const out = await runInChild(script, { SIGNAL_SOURCE: 'hl' });
+  const j = JSON.parse(out.trim().split('\n').pop()!);
+  assert.equal(j.hasRef, false, 'stale hl tape must yield null ref');
+});
+
+test('hl-only: assertConfig rejects live mode when SIGNAL_SOURCE=hl', async () => {
+  const script = `
+    import { assertConfig } from '${process.cwd()}/src/config.js';
+    assertConfig();
+    console.log('ok');
+  `;
+  let threw = false;
+  try { await runInChild(script, { SIGNAL_SOURCE: 'hl', MODE: 'live' }); }
+  catch (e: any) {
+    threw = true;
+    assert.match(e.stderr, /SIGNAL_SOURCE=hl is experimental/, `error should name the guard: ${e.stderr}`);
+  }
+  assert.ok(threw, 'assertConfig must throw when SIGNAL_SOURCE=hl and MODE=live');
+});

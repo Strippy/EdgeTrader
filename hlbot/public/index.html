@@ -79,6 +79,9 @@ tbody tr{cursor:pointer}
 .empty{color:var(--dim);padding:20px;text-align:center}
 .banner{border:1px solid var(--amber);color:var(--amber);padding:6px 10px;margin-top:8px;display:none;font-size:11px}
 footer{color:var(--faint);font-size:10px;margin-top:8px;text-align:center}
+
+  body.hl-only .lead-lag-panel { opacity: .35; }
+  body.hl-only .lead-lag-panel::after { content: 'not applicable — no external reference venue'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #888; background: rgba(0,0,0,.55); }
 </style>
 </head>
 <body>
@@ -121,7 +124,7 @@ footer{color:var(--faint);font-size:10px;margin-top:8px;text-align:center}
 
 <div class="grid r2">
   <div class="p inputs"><h3>MODEL INPUTS</h3><div id="inputs"></div></div>
-  <div class="p"><h3>LEAD-LAG · corr(ΔBinance[t−k], ΔHL[t]) <em id="llsub"></em></h3><canvas id="ll" height="200"></canvas>
+  <div class="p lead-lag-panel" style="position:relative"><h3>LEAD-LAG · corr(ΔBinance[t−k], ΔHL[t]) <em id="llsub"></em></h3><canvas id="ll" height="200"></canvas>
     <div class="d" style="font-size:10px;margin-top:4px">Peak right of 0 ms = Binance leads Hyperliquid by that much. Flat/peak at 0 = no latency edge right now.</div>
     <h3 style="margin-top:8px">NEURAL SHELL <em>fair → edge</em></h3><canvas id="shell" height="150"></canvas></div>
   <div class="p"><h3>EDGE MONITOR <em>bps after fees</em></h3><div id="edgemon"></div></div>
@@ -194,7 +197,9 @@ function render() {
   $('pnlmode').textContent = S.mode === 'shadow' ? 'SHADOW · hypothetical fills on live books' : 'LIVE ACCOUNT';
   $('banner').style.display = S.killed ? 'block' : 'none'; $('banner').textContent = S.killed ? '⚠ KILL SWITCH: ' + S.killed : '';
   $('clock').textContent = hms(S.now) + ' UTC';
-  $('sub').innerHTML = `HYPERLIQUID ${S.feeds.hl ? '<span class="g">OK</span>' : '<span class="r">DOWN</span>'} · BINANCE ${S.coins.some(x => x.binance) ? '<span class="g">OK</span>' : '<span class="r">—</span>'}`;
+  const hlOnly = S.coins.some(x => x.signalSource === 'hl');
+  document.body.classList.toggle('hl-only', hlOnly);
+  $('sub').innerHTML = `HYPERLIQUID ${S.feeds.hl ? '<span class="g">OK</span>' : '<span class="r">DOWN</span>'} · ${hlOnly ? '<span class="a">SIGNAL=HL-ONLY (EXPERIMENTAL, LIVE DISABLED)</span>' : `BINANCE ${S.coins.some(x => x.binance) ? '<span class="g">OK</span>' : '<span class="r">—</span>'}`}`;
   $('hstats').innerHTML = S.coins.map(x => `<div class="hs"><small>${x.coin} · lead ${x.llSamples > 100 ? x.leadMs + 'ms' : '…'}</small><b class="mono">${px(x.mid)}</b></div>`).join('');
   const items = [...S.tape.slice(0, 10).map(f => `<i class="${f.side === 'buy' ? 'g' : 'r'}">${f.liquidity.toUpperCase()} ${f.coin} ${f.side.toUpperCase()} ${f.sz} @ ${px(f.px)} · ${f.reason}</i>`), ...S.coins.map(x => `<i>${x.coin} FAIR ${fmt(x.fairBps, 1)}bp · BASIS ${fmt(x.basisBps, 1)}bp · LEAD ${x.leadMs}ms</i>`)];
   const roll = items.join(''); if ($('roll').dataset.h !== roll) { $('roll').innerHTML = roll; $('roll').dataset.h = roll; }
@@ -223,7 +228,7 @@ function render() {
     const [x, w, h] = fit($('ll')); x.clearRect(0, 0, w, h); const L = c.leadlag, n = L.length, bw = (w - 30) / n, Y = v => h / 2 - v * (h / 2 - 14);
     x.strokeStyle = C.l; x.beginPath(); x.moveTo(24, h / 2); x.lineTo(w, h / 2); x.stroke(); x.fillStyle = C.d; x.font = '9px JetBrains Mono'; x.fillText('+1', 2, 14); x.fillText('0', 8, h / 2 + 3); x.fillText('−1', 2, h - 6);
     L.forEach((v, k) => { if (!isFinite(v)) return; x.fillStyle = k * 200 === c.leadMs ? C.c : v >= 0 ? C.g : C.r; x.globalAlpha = k * 200 === c.leadMs ? 1 : .6; x.fillRect(26 + k * bw + 1, Math.min(Y(v), h / 2), bw - 2, Math.abs(Y(v) - h / 2)); x.globalAlpha = 1; if (k % 3 === 0) { x.fillStyle = C.d; x.fillText(`${k * 200}`, 26 + k * bw, h - 2); } });
-    $('llsub').textContent = c.llSamples > 100 ? `${c.coin}: peak ${c.leadMs}ms ρ=${fmt(L[c.leadMs / 200], 3)} · ${c.llSamples} samples` : 'sampling…';
+    $('llsub').textContent = c.leadMs === null ? `${c.coin}: n/a (hl-only mode)` : (c.llSamples > 100 ? `${c.coin}: peak ${c.leadMs}ms ρ=${fmt(L[c.leadMs / 200], 3)} · ${c.llSamples} samples` : 'sampling…');
   }
   $('pos').innerHTML = S.coins.filter(x => x.pos.sz).map(x => `<div class="inv"><div class="h"><b>${x.coin} ${x.pos.sz > 0 ? '<span class="g">LONG</span>' : '<span class="r">SHORT</span>'} ${Math.abs(x.pos.sz)}</b>${sgn(x.unreal)}</div><div class="h d"><span>avg ${px(x.pos.avgPx)}</span><span>${((S.now - x.pos.openedAt) / 1000).toFixed(0)}s</span></div></div>`).join('') || '<div class="empty">flat</div>';
   $('edgemon').innerHTML = S.coins.map(x => { const e = x.edges ?? {}; const best = Math.max(e.longTake ?? -99, e.shortTake ?? -99, e.longMake ?? -99, e.shortMake ?? -99); const w = Math.max(0, Math.min(100, (best + 10) * 5));
@@ -242,6 +247,19 @@ function render() {
 $('coins').addEventListener('click', e => { const tr = e.target.closest('tr[data-s]'); if (tr) { sel = tr.dataset.s; render(); } });
 function connect() { const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`); ws.onmessage = ev => { S = JSON.parse(ev.data); render(); }; ws.onclose = () => { $('sub').innerHTML = '<span class="r">engine disconnected — retrying</span>'; setTimeout(connect, 1500); }; }
 connect(); requestAnimationFrame(drawShell);
+</script>
+
+<script>
+  // Experimental-mode relabeling: when snapshot coins carry signalSource === 'hl',
+  // replace cross-venue labels so the panel doesn't misrepresent the active mode.
+  setInterval(() => {
+    try {
+      const S = window.__SNAP__;
+      if (!S || !S.coins?.length) return;
+      const hlOnly = S.coins.some(c => c.signalSource === 'hl');
+      document.body.classList.toggle('hl-only', hlOnly);
+    } catch (e) { /* noop */ }
+  }, 1000);
 </script>
 </body>
 </html>

@@ -11,8 +11,17 @@ const list = (k: string, d: string) => (process.env[k] ?? d).split(',').map(s =>
 
 export type Mode = 'shadow' | 'live';
 
+/**
+ * Signal source for the reference/leading price.
+ * 'binance' — original cross-venue lead-lag (Binance perp leads Hyperliquid).
+ * 'hl'      — Hyperliquid-only experimental: anchor is HL's own mid, momentum/flow from HL trade tape.
+ *             No external reference; lead-lag is not applicable. Live execution is force-disabled.
+ */
+export type SignalSource = 'binance' | 'hl';
+
 export const CFG = {
   mode: (process.env.MODE ?? 'shadow') as Mode,
+  signalSource: (process.env.SIGNAL_SOURCE ?? 'binance') as SignalSource,
   liveConfirm: process.env.LIVE_CONFIRM === 'I_UNDERSTAND_REAL_MONEY',
   /** Hyperliquid perp coin names; Binance symbol = lowercase + "usdt". */
   coins: list('COINS', 'BTC,ETH,SOL,XRP').map(c => c.toUpperCase()),
@@ -43,7 +52,7 @@ export const CFG = {
   leverage: num('LEVERAGE', 3),
 
   // --- staleness ---
-  staleSpotMs: num('STALE_SPOT_MS', 1500),
+  staleSpotMs: num('STALE_SPOT_MS', 5000),
   staleBookMs: num('STALE_BOOK_MS', 3000),
 
   // --- model (shared with stats.ts) ---
@@ -66,6 +75,8 @@ export const CFG = {
 
 export function assertConfig() {
   if (CFG.mode !== 'shadow' && CFG.mode !== 'live') throw new Error('MODE must be shadow|live');
+  if (CFG.signalSource === 'hl' && CFG.mode === 'live')
+    throw new Error('SIGNAL_SOURCE=hl is experimental: live execution is not permitted in this mode');
   if (CFG.mode === 'live') {
     if (!CFG.liveConfirm) throw new Error('Live mode needs LIVE_CONFIRM=I_UNDERSTAND_REAL_MONEY');
     if (!CFG.agentKey || !CFG.account) throw new Error('Live mode needs HL_AGENT_PRIVATE_KEY and HL_ACCOUNT_ADDRESS');

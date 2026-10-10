@@ -8,8 +8,8 @@ const ewAlpha = (halfLifeSec: number) => 1 - Math.pow(0.5, 1 / halfLifeSec);
  * tick-level for last price + order-flow imbalance.
  */
 export class AssetStats {
-  last = { spot: 0, perp: 0, spotTs: 0, perpTs: 0 };
-  /** 1s samples of the reference price (perp if live, else spot). */
+  last = { spot: 0, perp: 0, hl: 0, spotTs: 0, perpTs: 0, hlTs: 0 };
+  /** 1s samples of the reference price (perp or hl per venue, else spot). */
   series: { ts: number; px: number }[] = [];
   private varFast = NaN;
   private varSlow = NaN;
@@ -22,13 +22,18 @@ export class AssetStats {
 
   onTick(t: Tick) {
     if (t.venue === 'spot') { this.last.spot = t.price; this.last.spotTs = t.ts; }
-    else { this.last.perp = t.price; this.last.perpTs = t.ts; }
+    else if (t.venue === 'perp') { this.last.perp = t.price; this.last.perpTs = t.ts; }
+    else { this.last.hl = t.price; this.last.hlTs = t.ts; }
     const notional = t.price * t.qty;
-    if (t.venue === 'perp' || !this.last.perpTs) this.flow.push({ ts: t.ts, signed: t.buyAggressor ? notional : -notional, abs: notional });
+    if (t.venue === 'perp' || t.venue === 'hl' || !this.last.perpTs) this.flow.push({ ts: t.ts, signed: t.buyAggressor ? notional : -notional, abs: notional });
   }
 
-  /** Price that leads: perp when fresh, else spot. */
-  ref(now = Date.now()): { px: number; ts: number; venue: 'perp' | 'spot' } | null {
+  /** Price that leads: hl (hyperliquid-only mode) or perp when fresh, else spot. */
+  ref(now = Date.now()): { px: number; ts: number; venue: 'hl' | 'perp' | 'spot' } | null {
+    if (CFG.signalSource === 'hl') {
+      if (this.last.hl && now - this.last.hlTs < CFG.staleSpotMs) return { px: this.last.hl, ts: this.last.hlTs, venue: 'hl' };
+      return null;
+    }
     if (this.last.perp && now - this.last.perpTs < CFG.staleSpotMs) return { px: this.last.perp, ts: this.last.perpTs, venue: 'perp' };
     if (this.last.spot) return { px: this.last.spot, ts: this.last.spotTs, venue: 'spot' };
     return null;

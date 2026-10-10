@@ -28,6 +28,8 @@ export class Engine {
   startedAt = Date.now();
 
   constructor(public exec: Executor, public hl: HyperliquidFeed, meta: Map<string, AssetMeta>) {
+    const hlOnly = CFG.signalSource === 'hl';
+    if (hlOnly) log('info', 'engine', 'signal=hyperliquid-only: no external reference price — experimental, live disabled');
     for (const c of CFG.coins) {
       const m = meta.get(c);
       if (!m) { log('warn', 'engine', `${c} not in Hyperliquid perp universe — skipped`); continue; }
@@ -52,6 +54,7 @@ export class Engine {
 
   private sample() {
     const now = Date.now();
+    if (CFG.signalSource === 'hl') return; // no cross-venue basis or lead-lag in HL-only mode
     for (const s of this.coins.values()) {
       const r = s.stats.ref(now), m = mid(this.hl.books.get(s.coin));
       if (!r || !(m > 0) || now - r.ts > CFG.staleSpotMs) continue;
@@ -78,13 +81,16 @@ export class Engine {
     const b = this.hl.books.get(s.coin);
     const r = s.stats.ref(now);
     if (!b || now - b.recvAt > CFG.staleBookMs) { s.block = 'HL book stale'; return; }
-    if (!r || now - r.ts > CFG.staleSpotMs) { s.block = 'Binance stale'; return; }
-    if (s.basis.n < 50) { s.block = `calibrating basis ${s.basis.n}/50`; return; }
+    if (!r || now - r.ts > CFG.staleSpotMs) { s.block = 'HL book stale (no signal)'; return; }
+    // note: in HL-only mode the stale-book gate above covers both feeds since the only feed is HL
+    if (CFG.signalSource === 'binance' && s.basis.n < 50) { s.block = `calibrating basis ${s.basis.n}/50`; return; }
+    if (CFG.signalSource === 'binance' && s.stats.series.length < 30) { s.block = 'warming momentum'; return; }
     const bid = b.bids[0]?.price, ask = b.asks[0]?.price;
     if (!(bid > 0 && ask > bid)) { s.block = 'no book'; return; }
 
     const d = s.stats.drift();
-    s.fair = fairPrice({ binanceRef: r.px, basisLog: s.basis.v, mu: d.mu, horizonSec: CFG.horizonSec, ofi: s.stats.ofi(10, now), ofiWeightBps: CFG.ofiWeightBps });
+    const fairBasis = CFG.signalSource === 'hl' ? 0 : s.basis.v;
+    s.fair = fairPrice({ binanceRef: r.px, basisLog: fairBasis, mu: d.mu, horizonSec: CFG.horizonSec, ofi: s.stats.ofi(10, now), ofiWeightBps: CFG.ofiWeightBps });
     s.edges = edges({ fair: s.fair, bid, ask, pos: s.pos }, CFG);
     if (s.busy) { s.block = 'order in flight'; return; }
 
@@ -160,7 +166,7 @@ export class Engine {
         basisBps: (s.basis.v || 0) * 1e4, fair: s.fair, fairBps: s.fair && m ? (s.fair / m - 1) * 1e4 : null, edges: s.edges,
         sigmaBps: s.stats.sigma() * 1e4, momBps: d.mom * 15 * 1e4, ofi: s.stats.ofi(10, now),
         pos: s.pos, unreal: u, working: s.working, block: s.block,
-        leadlag: ll, leadMs: peak * 200, llSamples: s.leadlag.samples,
+        leadlag: CFG.signalSource === 'hl' ? [] : ll, leadMs: CFG.signalSource === 'hl' ? null : peak * 200, llSamples: s.leadlag.samples,
         books: { bids: b?.bids.slice(0, 8) ?? [], asks: b?.asks.slice(0, 8) ?? [] },
         hist: s.hist.slice(-300),
       };

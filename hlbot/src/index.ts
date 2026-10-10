@@ -20,7 +20,12 @@ async function main() {
   hl.onBook = b => exec.onBook?.(b);
   hl.start();
   const engine = new Engine(exec, hl, meta);
-  startBinance([...engine.coins.keys()].map(c => c.toLowerCase()), t => engine.onTick(t));
+  if (CFG.signalSource === 'hl') {
+    hl.onTradeAsTick = t => engine.onTick({ asset: t.coin.toLowerCase(), venue: 'hl', price: t.px, qty: t.sz, ts: t.time, buyAggressor: t.side === 'B' });
+    log('info', 'main', 'SIGNAL_SOURCE=hl: no Binance feeds started — Hyperliquid trade tape is the only reference');
+  } else {
+    startBinance([...engine.coins.keys()].map(c => c.toLowerCase()), t => engine.onTick(t));
+  }
   engine.start();
   startServer(engine as any);
   log('info', 'main', `mode=${CFG.mode.toUpperCase()} coins=${[...engine.coins.keys()].join(',')} clip=$${CFG.clipUsd} take≥${CFG.takeEdgeBps}bp make≥${CFG.makeEdgeBps}bp`);

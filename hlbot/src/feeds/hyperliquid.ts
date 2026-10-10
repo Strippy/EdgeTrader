@@ -28,6 +28,9 @@ export class HyperliquidFeed {
   onTrade: (t: HlTrade) => void = () => {};
   onBook: (b: HlBook) => void = () => {};
 
+  /** Hyperliquid-only mode: forward each HL trade to the Tick pipeline (venue 'hl', side 'B' = buy aggressor). */
+  onTradeAsTick: (t: HlTrade) => void = () => {};
+
   constructor(private coins: string[]) {
     this.ws = new ReconnectingWS('hyperliquid', () => process.env.HL_WS_URL ?? 'wss://api.hyperliquid.xyz/ws', {
       heartbeat: { everyMs: 20_000, payload: JSON.stringify({ method: 'ping' }) },
@@ -63,6 +66,7 @@ export class HyperliquidFeed {
           const tr: HlTrade = { coin: t.coin, side: t.side, px: Number(t.px), sz: Number(t.sz), time: Number(t.time) };
           bus.counts['hl-trades'] = (bus.counts['hl-trades'] ?? 0) + 1;
           this.onTrade(tr);
+          this.onTradeAsTick(tr);
         }
         break;
       case 'subscriptionResponse':

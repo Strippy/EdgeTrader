@@ -43,3 +43,37 @@ The build sandbox couldn't reach Binance or Hyperliquid, so the live feeds and o
 Hyperliquid is fast and heavily arbitraged against Binance. A round trip costs 6–9bp in fees, close to a typical minute of BTC movement. Expect long idle stretches. Run shadow for days, then judge by **net bp per trip** and **maker share**. Funding isn't counted in shadow P&L; holds are capped at 90s by default, so it's small but not zero.
 
 Not financial advice. Offshore, unlicensed venue: no Australian investor protections apply.
+
+## Experimental: Hyperliquid-only mode (`SIGNAL_SOURCE=hl`)
+
+Binance (binance.com) is geo-blocked from some hosting environments, which blocks the
+original cross-venue lead-lag strategy. `SIGNAL_SOURCE=hl` runs the engine on
+Hyperliquid's own trade tape as the reference price, with momentum and taker-flow
+imbalance computed from Hyperliquid trades.
+
+**This is a different, unproven signal.** There is no external reference venue, so:
+
+- The lead-lag panel is **not applicable** (it reads n/a on the dashboard).
+- The fair value is an *experimental projected price*, not an independently
+  observed cross-venue fair value.
+- **Live execution is hard-disabled** for this mode. `assertConfig()` rejects
+  `MODE=live` when `SIGNAL_SOURCE=hl`.
+
+Do not judge the original Binance-lead-lag thesis from this mode's results.
+
+### Run it
+
+```bash
+MODE=shadow SIGNAL_SOURCE=hl npx tsx src/index.ts
+```
+
+### Tested behavior
+
+- `venue: 'hl'` ticks flow through `AssetStats` and drive `ref()`, `drift()`, `ofi()`.
+- A stale HL trade tape yields a null reference and blocks new simulated entries.
+- `assertConfig()` rejects live mode when `SIGNAL_SOURCE=hl`.
+- The dashboard hides/disables the cross-venue lead-lag panel and the "BINANCE"
+  feed chip when in HL-only mode.
+
+Default `STALE_SPOT_MS` is 5000 in HL-only mode (HL trade cadence is lower than
+Binance perp's); you can override via env.

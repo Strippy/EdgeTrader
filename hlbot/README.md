@@ -77,3 +77,29 @@ MODE=shadow SIGNAL_SOURCE=hl npx tsx src/index.ts
 
 Default `STALE_SPOT_MS` is 5000 in HL-only mode (HL trade cadence is lower than
 Binance perp's); you can override via env.
+
+## Runtime requirements
+
+`package.json` engines requires Node >= 22.12. The current sandbox here runs Node 20.20.2 —
+typecheck and tests pass, but to be strictly correct, run with Node >= 22.12 on your machine
+or VPS (nvm, docker node:22, etc.) before live use.
+
+## Known limitations
+
+- **Engine restart in live mode assumes you start with no open positions on the configured
+  coins.** Position state is in-memory only. If the process dies mid-position, on restart
+  `pos = { sz: 0 }` — the engine will happily open a *new* position while the old one is
+  still held. Either close positions before restarting, or manually reconcile state.
+- **Shadow maker fills use a permissive "book touch" model.** A resting maker order fills
+  if any side of the book crosses it — no queue-position simulation. Real fills are usually
+  worse (queue priority, partial fills at touch only). Read shadow `makerShare` and
+  `netBpsPerTrip` as an *upper bound*, not a point estimate.
+- **Short shadow runs mix samples across restarts by default.** Fills/trips persist in
+  `data/{mode}-{fills,trips}.jsonl` and are loaded on boot. Use `DATA_FRESH=1` for each
+  session if you want each run's stats in isolation (also wipes live history — set
+  `DATA_FRESH=0` or omit in live).
+- **Signal-source switch changes the strategy meaning.** `SIGNAL_SOURCE=hl` disables
+  basis calibration and lead-lag and changes the fair value to a Hyperliquid-only
+  projection. Do not mix results from `binance` and `hl` modes in the same evaluation.
+- Sandbox/production environments where `binance.com` is geo-blocked (HTTP 451) cannot
+  run the original cross-venue strategy. `SIGNAL_SOURCE=hl` exists for this case.

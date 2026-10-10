@@ -38,8 +38,17 @@ export class Engine {
         pos: { sz: 0, avgPx: 0, openedAt: 0 }, working: null, busy: false, lastActionAt: 0, fair: null, edges: null, block: 'warming up', trip: null, hist: [],
       });
     }
-    this.fills = load<Fill>('fills', exec.mode);
-    this.trips = load<RoundTrip>('trips', exec.mode);
+    if (process.env.DATA_FRESH === '1') {
+      // each shadow/live session starts with an empty history file, so short runs don't mix samples
+      // WARNING: also wipes live-mode history (use DATA_FRESH=0 in live to preserve restart continuity).
+      this.fills = []; this.trips = [];
+      log('info', 'engine', 'DATA_FRESH=1 — starting with empty history');
+    } else {
+      this.fills = load<Fill>('fills', exec.mode);
+      this.trips = load<RoundTrip>('trips', exec.mode);
+      if (this.trips.length || this.fills.length)
+        log('info', 'engine', `resumed ${this.trips.length} trips / ${this.fills.length} fills from prior runs (DATA_FRESH=1 to reset)`);
+    }
     exec.onMakerFill = (f) => this.onFill(f, true);
     if (exec.mode === 'live') log('warn', 'engine', 'live: positions start flat in memory — close any existing positions on these coins before starting');
   }
@@ -80,8 +89,17 @@ export class Engine {
     const now = Date.now();
     const b = this.hl.books.get(s.coin);
     const r = s.stats.ref(now);
-    if (!b || now - b.recvAt > CFG.staleBookMs) { s.block = 'HL book stale'; return; }
-    if (!r || now - r.ts > CFG.staleSpotMs) { s.block = 'HL book stale (no signal)'; return; }
+    const staleBook = !b || now - b.recvAt > CFG.staleBookMs;
+    const staleSignal = !r || now - r.ts > CFG.staleSpotMs;
+    if (staleBook) s.block = 'HL book stale';
+    // On a stale book, in live mode we MUST still run kill-state cancels (the resting order
+    // is real on the exchange). We just can't take new action (no prices to compute).
+    if (this.killed && staleBook && s.working) {
+      this.act(s, { kind: 'cancel', reason: `kill: stale book` });
+      return;
+    }
+    if (staleBook) return;
+    if (staleSignal) { s.block = 'HL book stale (no signal)'; return; }
     // note: in HL-only mode the stale-book gate above covers both feeds since the only feed is HL
     if (CFG.signalSource === 'binance' && s.basis.n < 50) { s.block = `calibrating basis ${s.basis.n}/50`; return; }
     if (CFG.signalSource === 'binance' && s.stats.series.length < 30) { s.block = 'warming momentum'; return; }
